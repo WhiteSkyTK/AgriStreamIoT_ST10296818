@@ -4,6 +4,7 @@ using AgriStreamIoT.Web.Filters;
 using AgriStreamIoT.Web.Middleware;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.Features;
+using Azure.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
