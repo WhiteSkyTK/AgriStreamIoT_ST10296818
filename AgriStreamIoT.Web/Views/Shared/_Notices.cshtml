@@ -1,0 +1,14 @@
+@if (TempData["Success"] is string success)
+{
+    <div class="notice is-success" role="status">
+        <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+        <div>@success</div>
+    </div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="notice is-error" role="alert">
+        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+        <div>@error</div>
+    </div>
+}

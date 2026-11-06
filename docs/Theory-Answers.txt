@@ -1,0 +1,306 @@
+AgriStream IoT - CLDV7112 practicum: theory answers
+Disaster recovery and redundancy | Stateless vs stateful | Serverless triggers and bindings
+
+
+1. Disaster recovery and redundancy: Azure Storage redundancy options
+=====================================================================
+
+Azure Storage always keeps several copies of your data. The redundancy option you pick for a storage
+account decides where those copies live, and therefore which failures the data survives. Redundancy
+is set per storage account, so data with different recovery needs belongs in different accounts.
+
++--------------------+------------------------------------+---------------------+-----------------------+
+| Option             | Where the copies are               | Durability (per     | Survives              |
+|                    |                                    | year)               |                       |
++====================+====================================+=====================+=======================+
+| LRS (locally       | 3 synchronous copies inside one    | at least 11 nines   | Disk, server and rack |
+| redundant)         | datacenter in the primary region   | (99.999999999%)     | failures              |
++--------------------+------------------------------------+---------------------+-----------------------+
+| ZRS (zone          | 3 synchronous copies across 3      | at least 12 nines   | A whole datacenter    |
+| redundant)         | availability zones in the primary  |                     | (zone) going down     |
+|                    | region                             |                     |                       |
++--------------------+------------------------------------+---------------------+-----------------------+
+| GRS (geo           | LRS in the primary region + an     | at least 16 nines   | A whole region going  |
+| redundant)         | asynchronous copy to the paired    |                     | down (after failover) |
+|                    | region, kept as LRS there (6       |                     |                       |
+|                    | copies)                            |                     |                       |
++--------------------+------------------------------------+---------------------+-----------------------+
+| RA-GRS             | GRS + read access to the secondary | at least 16 nines   | Region outage, with   |
+|                    | region at any time                 |                     | reads still possible  |
+|                    |                                    |                     | during it             |
++--------------------+------------------------------------+---------------------+-----------------------+
+| GZRS / RA-GZRS     | ZRS in the primary region +        | at least 16 nines   | Zone and region       |
+|                    | asynchronous LRS copy in the       |                     | outages               |
+|                    | paired region                      |                     |                       |
++--------------------+------------------------------------+---------------------+-----------------------+
+
+1.1 LRS compared with GRS
+-------------------------
+
++-------------------+--------------------------------------+-------------------------------------------+
+| Aspect            | Locally redundant storage (LRS)      | Geo-redundant storage (GRS / RA-GRS)      |
++===================+======================================+===========================================+
+| How writes are    | Synchronously to three copies in a   | First the same LRS write in the primary   |
+| replicated        | single datacenter; the write         | region, then copied asynchronously to the |
+|                   | succeeds only when all three are     | paired region (for South Africa North     |
+|                   | written.                             | that is South Africa West), where it is   |
+|                   |                                      | stored as LRS again.                      |
++-------------------+--------------------------------------+-------------------------------------------+
+| What it protects  | Hardware failure: a failed disk,     | Hardware failure and the loss of the      |
+| against           | server or rack.                      | entire primary region (fire, flood, power |
+|                   |                                      | or network disaster).                     |
++-------------------+--------------------------------------+-------------------------------------------+
+| What it does NOT  | A datacenter-wide or region-wide     | Accidental deletion, overwrites,          |
+| protect against   | disaster: all three copies are in    | ransomware or a bad application write:    |
+|                   | one building.                        | Microsoft states that deletions and       |
+|                   |                                      | overwrites are applied to all copies,     |
+|                   |                                      | because redundancy protects against       |
+|                   |                                      | hardware failure, not data-modifying      |
+|                   |                                      | operations.                               |
++-------------------+--------------------------------------+-------------------------------------------+
+| Recovery point    | No regional copy, so a regional      | Replication is asynchronous, so the last  |
+| (RPO)             | disaster can mean losing the data.   | few minutes of writes can be lost.        |
+|                   |                                      | Microsoft quotes about 15 minutes or      |
+|                   |                                      | less, guaranteed for block blobs when Geo |
+|                   |                                      | priority replication is enabled.          |
++-------------------+--------------------------------------+-------------------------------------------+
+| Recovery time     | Not applicable for a regional        | After a failover (customer-managed, or    |
+| (RTO)             | disaster: you rely on Microsoft      | initiated by Microsoft) the secondary     |
+|                   | restoring the region.                | becomes the new primary and is readable   |
+|                   |                                      | and writable. With RA-GRS the data can be |
+|                   |                                      | read from the secondary endpoint even     |
+|                   |                                      | before failover.                          |
++-------------------+--------------------------------------+-------------------------------------------+
+| Cost and          | Cheapest option and lowest write     | Roughly double the LRS storage price plus |
+| performance       | latency.                             | geo-replication bandwidth on writes.      |
+|                   |                                      | Write latency is unchanged because the    |
+|                   |                                      | geo copy is made asynchronously.          |
++-------------------+--------------------------------------+-------------------------------------------+
+| Typical use       | Data that is cheap to recreate,      | Business-critical, irreplaceable or       |
+|                   | short-lived or already backed up     | legally required data.                    |
+|                   | elsewhere.                           |                                           |
++-------------------+--------------------------------------+-------------------------------------------+
+
+1.2 Recommendation for AgriStream IoT
+-------------------------------------
+
+Critical historical crop harvest records: use RA-GRS (geo-redundant with read access).
+
+  - Harvest records are irreplaceable: they support traceability and export certification, insurance
+    claims, bank and audit requirements, and the multi-season yield analysis agronomists use to plan
+    crops. They are written once and kept for years, so losing a region's worth of data is not
+    acceptable.
+  - RA-GRS keeps a second copy hundreds of kilometres away in the paired region, and the farm can
+    still read the records from the secondary endpoint while the primary region is down. With South
+    Africa North as the primary region the copy stays inside South Africa (South Africa West), which
+    helps with POPIA data-residency expectations.
+  - Because geo-replication also replicates deletions, add blob versioning, soft delete and an
+    immutable (WORM) retention policy so a user mistake or ransomware cannot wipe the records.
+  - Older seasons can move to the Cool or Archive tier with a lifecycle management rule. RA-GRS
+    supports the Archive tier; ZRS, GZRS and RA-GZRS accounts do not, which is a reason to prefer
+    RA-GRS over RA-GZRS here.
+
+Temporary sensor logs: use LRS (locally redundant storage).
+
+  - Raw soil readings arrive every one to two minutes from every probe: very high volume, low value
+    per row, and only needed for a short time (dashboards, alerts, daily aggregation). Losing some
+    hours of raw logs in a regional disaster does not harm the business; the aggregated results are
+    what matter.
+  - LRS is the cheapest option and has no geo-replication bandwidth charge, which matters because
+    the cost of GRS grows with every write. Three local copies still protect against everyday
+    hardware failures.
+  - Keep the logs short-lived: a lifecycle rule deletes log blobs after, say, 30 days; for Table
+    Storage, write one table per month (or delete old partitions) so expired data can be dropped
+    cheaply. If dashboards must keep running through the loss of a single datacenter during harvest
+    season, ZRS is the next step up.
+
+Design consequence: AgriStream should use two storage accounts, an RA-GRS "records" account for
+harvest records and survey archives and an LRS "telemetry" account for sensor logs, irrigation
+events and the command queue, because one account cannot mix redundancy levels. (The practicum build
+keeps everything in one account to keep setup simple; the account split is the production design.)
+
+
+2. Stateless vs stateful architecture
+=====================================
+
+A stateless service keeps nothing about a user or a job in its own memory or on its own disk between
+requests: every request carries (or can look up) everything it needs, and all lasting data lives in
+shared services such as Azure SQL, Blob/Table Storage or a distributed cache. A stateful service
+keeps that information on the instance itself, for example in-memory session variables, files saved
+to the local disk or a timer running in memory.
+
+2.1 Why App Service and Azure Functions must be stateless to scale horizontally
+-------------------------------------------------------------------------------
+
+  - Horizontal scaling (scale-out) adds identical instances behind a load balancer. That only helps
+    if ANY instance can serve ANY request. If the user's state is on instance 1, instance 2 cannot
+    help with that user.
+  - Instances come and go without warning. Autoscale removes instances when CPU or memory drops
+    (scale-in), the platform recycles instances for patching and restarts them after deployments,
+    and the Functions scale controller creates and destroys Consumption/Flex instances, down to zero
+    when idle. Anything kept only on an instance is eventually lost.
+  - There is no guarantee that consecutive Function executions run on the same instance: a burst of
+    500 queue messages or 200 drone uploads is spread over many instances processing in parallel, so
+    a function cannot rely on memory left behind by a previous execution. Each execution must be
+    independent, and idempotent because triggers deliver messages at least once.
+  - Stateless instances are interchangeable, so a failed instance is simply replaced (better
+    reliability) and the platform can balance load evenly (better performance and cost).
+
+2.2 How local session data and local files damage scale-out
+-----------------------------------------------------------
+
+  - In-memory session state forces sticky sessions. ASP.NET Core's default session store is in
+    memory on each instance, so App Service has to pin each user to the same instance with the ARR
+    affinity cookie. When autoscale adds instances during peak daylight hours, existing users stay
+    pinned to the instance that is already overloaded; only new users reach the new instances. The
+    extra instances sit half idle while the hot instance keeps timing out, so scaling out does not
+    relieve the load it was triggered by.
+  - Sessions disappear on scale-in or restart. When autoscale removes the instance (or the platform
+    recycles it), every session on it is gone: users are logged out and lose half-completed work,
+    such as an irrigation schedule or an upload form, in the middle of the working day.
+  - Local files are invisible to other instances. A drone image saved to one instance's disk returns
+    404 on the other instances, so gallery links break at random depending on which instance
+    answers. Local disks are also small, temporary (App Service local and temp storage is wiped on
+    restart) and are not backed up. A burst of high-resolution imagery can fill the disk and crash
+    the instance.
+  - Background work kept in memory, such as a timer that should switch a pump off in 30 minutes, is
+    lost when the instance goes, and runs once per instance when there are several (duplicate
+    commands).
+
+2.3 How AgriStream IoT stays stateless
+--------------------------------------
+
+  - Sign-in uses an encrypted authentication cookie instead of server session; App Service shares
+    the ASP.NET Core Data Protection key ring between instances, so any instance can read the
+    cookie. ARR affinity can therefore be turned off, letting new instances take load immediately.
+  - Drone images and farm media go straight to Azure Blob Storage; sensor telemetry, irrigation
+    events and image audits go to Azure Table Storage; users, fields and the master device register
+    live in Azure SQL Database.
+  - In-memory caching is only a short-lived speed-up (field list 60 s, dashboard snapshot 5-10 s)
+    that is safe to lose; the source of truth is always the shared store.
+  - The irrigation auto-stop is a delayed message on the Storage Queue, not a timer in memory, so
+    whichever instance is alive when it becomes visible processes it. Commands carry a CommandId so
+    a retried or duplicated message is applied once (idempotency).
+  - The live sensor simulator uses a blob lease so only one web instance writes readings even after
+    scale-out, and the X-Served-By response header shows that requests are spread across instances
+    during the load test.
+
+When a process genuinely needs state (for example a multi-step harvest workflow), the state is
+persisted outside the instance: Durable Functions store orchestration state in Azure Storage, and
+session or cache data can go to a distributed cache such as Azure Managed Redis.
+
+
+3. Serverless triggers and bindings
+===================================
+
+In Azure Functions every function has exactly one trigger; bindings are optional, and a function can
+have several input and output bindings. They are declared with attributes in the .NET isolated
+worker model, and each refers to a connection SETTING name (for example "FarmStorage"), so no
+connection string is written in code.
+
++----------------+------------------------+------------------------+------------------------------------+
+|                | Definition             | Purpose                | Example in the AgriStream pipeline |
++================+========================+========================+====================================+
+| Trigger        | The event that starts  | Runs code only when    | ProcessDroneImageUpload: a         |
+|                | a function. Exactly    | something happens, and | [BlobTrigger] on                   |
+|                | one per function. It   | the platform scales    | drone-images/{name} fires for      |
+|                | also passes the event  | the number of          | every drone image uploaded.        |
+|                | data in (the HTTP      | instances to the event | GetLatestTelemetry: an             |
+|                | request, the blob, the | rate (serverless: no   | [HttpTrigger] for GET              |
+|                | queue message).        | polling code, no idle  | /api/telemetry/latest when a       |
+|                |                        | servers to manage).    | farmer opens a field dashboard.    |
+|                |                        |                        | TriggerIrrigation: an              |
+|                |                        |                        | [HttpTrigger] for POST             |
+|                |                        |                        | /api/irrigation/trigger when       |
+|                |                        |                        | "Trigger irrigation" is clicked or |
+|                |                        |                        | dry soil is detected.              |
+|                |                        |                        | ProcessIrrigationCommand: a        |
+|                |                        |                        | [QueueTrigger] on                  |
+|                |                        |                        | irrigation-commands for each       |
+|                |                        |                        | Irrigation Command.                |
++----------------+------------------------+------------------------+------------------------------------+
+| Input binding  | A declarative          | Removes connection and | ProcessDroneImageUpload receives   |
+|                | connection that READS  | read code: the runtime | the uploaded image through its     |
+|                | data from another      | opens the resource,    | blob binding as a BlobClient (an   |
+|                | service and hands it   | authenticates with the | SDK-type binding), so it can read  |
+|                | to the function as a   | configured setting and | the size, content type and         |
+|                | parameter before the   | passes ready-to-use    | field/uploader metadata and        |
+|                | code runs.             | data or an SDK client. | download only the first 512 KB of  |
+|                |                        |                        | a 30 MB image to validate it.      |
+|                |                        |                        | Dashboard Table reads use the      |
+|                |                        |                        | Azure.Data.Tables client through   |
+|                |                        |                        | dependency injection instead of a  |
+|                |                        |                        | [TableInput] binding, because that |
+|                |                        |                        | query needs a newest-first RowKey  |
+|                |                        |                        | range over three tables plus a     |
+|                |                        |                        | cache. A [TableInput] binding      |
+|                |                        |                        | suits a fixed lookup, such as the  |
+|                |                        |                        | latest WS-01 weather row.          |
++----------------+------------------------+------------------------+------------------------------------+
+| Output binding | A declarative          | Sends results on       | TriggerIrrigation returns a        |
+|                | connection that WRITES | without SDK code, and  | TriggerIrrigationOutput object.    |
+|                | the value a function   | keeps a write tied to  | Its [QueueOutput] property puts    |
+|                | returns (or sets on    | success: if the        | the JSON Irrigation Command on the |
+|                | its return object) to  | function throws,       | irrigation-commands Storage Queue, |
+|                | another service after  | nothing is written.    | and its [HttpResult] property      |
+|                | the function completes | One function can have  | returns 202 Accepted with the      |
+|                | successfully.          | several outputs.       | CommandId to the MVC app, both     |
+|                |                        |                        | from the same execution.           |
++----------------+------------------------+------------------------+------------------------------------+
+
+3.1 The four AgriStream functions at a glance
+---------------------------------------------
+
++--------------------------+-------------------------+--------------------------+----------------------+
+| Function                 | Trigger                 | Bindings / data path     | What it does         |
++==========================+=========================+==========================+======================+
+| ProcessDroneImageUpload  | Blob trigger on         | In: BlobClient for the   | Logs the upload      |
+|                          | drone-images/{name}     | new blob. Writes:        | details (field,      |
+|                          |                         | ImageProcessingAudit     | uploader, size,      |
+|                          |                         | table (Processing, then  | format, resolution)  |
+|                          |                         | Processed or Rejected).  | and records a        |
+|                          |                         |                          | processing-status    |
+|                          |                         |                          | audit entry for      |
+|                          |                         |                          | every drone image.   |
++--------------------------+-------------------------+--------------------------+----------------------+
+| GetLatestTelemetry       | HTTP GET                | In: HttpRequest          | Returns the latest   |
+|                          | /api/telemetry/latest   | (fieldId, hours). Reads: | reading of every     |
+|                          |                         | SensorTelemetry,         | sensor, a 24-hour    |
+|                          |                         | EnvironmentalLogs and    | chart series, the    |
+|                          |                         | IrrigationEvents tables. | weather and recent   |
+|                          |                         | Out: JSON response.      | irrigation in one    |
+|                          |                         |                          | call for             |
+|                          |                         |                          | near-instant         |
+|                          |                         |                          | dashboard rendering  |
+|                          |                         |                          | (10 s cache-aside).  |
++--------------------------+-------------------------+--------------------------+----------------------+
+| TriggerIrrigation        | HTTP POST               | In: HttpRequest (JSON    | Validates the        |
+|                          | /api/irrigation/trigger | body). Out: QueueOutput  | request and queues   |
+|                          |                         | to irrigation-commands   | the Irrigation       |
+|                          |                         | plus HttpResult 202.     | Command; queue-based |
+|                          |                         |                          | load levelling means |
+|                          |                         |                          | bursts are never     |
+|                          |                         |                          | lost and the caller  |
+|                          |                         |                          | never waits for the  |
+|                          |                         |                          | controller.          |
++--------------------------+-------------------------+--------------------------+----------------------+
+| ProcessIrrigationCommand | Queue trigger on        | In: message text.        | Updates the          |
+|                          | irrigation-commands     | Writes: Azure SQL        | controller's         |
+|                          |                         | dbo.Devices and          | operational status   |
+|                          |                         | dbo.DeviceStatusHistory, | in the master device |
+|                          |                         | the IrrigationEvents     | register             |
+|                          |                         | table and a delayed      | (Irrigating/Online)  |
+|                          |                         | auto-stop message.       | in a transaction     |
+|                          |                         |                          | with a safety        |
+|                          |                         |                          | interlock and        |
+|                          |                         |                          | idempotency check.   |
+|                          |                         |                          | Failures retry up to |
+|                          |                         |                          | 5 times, then go to  |
+|                          |                         |                          | the poison queue.    |
++--------------------------+-------------------------+--------------------------+----------------------+
+
+Key takeaway: triggers decide WHEN code runs and drive automatic scaling; input bindings bring data
+IN without plumbing code; output bindings send results OUT reliably once the function succeeds.
+Together they let each AgriStream function contain only its business logic, which is what makes the
+pipeline serverless and easy to scale.
+

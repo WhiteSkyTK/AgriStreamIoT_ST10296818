@@ -1,0 +1,13 @@
+@model ErrorViewModel
+@{
+    ViewData["Title"] = "Something went wrong";
+}
+<div class="panel" style="max-width:640px">
+    <h1 class="h3"><i class="bi bi-exclamation-octagon me-2" style="color:var(--fault)" aria-hidden="true"></i>Something went wrong</h1>
+    <p>The request could not be completed. Try again, and if it keeps happening check the application logs in Application Insights.</p>
+    @if (Model?.ShowRequestId == true)
+    {
+        <p class="small-text muted mb-0">Request ID: <strong>@Model.RequestId</strong></p>
+    }
+    <a class="btn btn-farm mt-3" asp-controller="Home" asp-action="Index">Back to AgriStream</a>
+</div>

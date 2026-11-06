@@ -1,0 +1,38 @@
+@model FieldCard
+@{
+    var moisture = Model.Telemetry?.AvgSoilMoisturePct;
+    var state = Display.MoistureState(moisture, Model.Field.MoistureThresholdPct);
+}
+<a class="field-card" asp-controller="Fields" asp-action="Dashboard" asp-route-id="@Model.Field.FieldId"
+   aria-label="@Model.Field.Name: soil moisture @(moisture?.ToString("0.0") ?? "no data")%, @state.Label">
+    <div class="gauge @(state.Css == "is-dry" ? "is-dry" : "")"
+         style="--level:@Display.GaugePercent(moisture)%;--threshold:@Display.GaugePercent((double)Model.Field.MoistureThresholdPct)%">
+        <div class="gauge-water"></div>
+        <div class="gauge-threshold" title="Irrigate below @Model.Field.MoistureThresholdPct.ToString("0.#")%"></div>
+    </div>
+    <div>
+        <h3>@Model.Field.Name</h3>
+        <div class="crop">@Model.Field.Crop</div>
+        <div class="facts">
+            <span>@Model.Field.FieldId</span>
+            <span>@Model.Field.AreaHectares.ToString("0.#") ha</span>
+            <span>@Model.Field.IrrigationMethod</span>
+        </div>
+        <div class="reading">
+            <strong>@(moisture?.ToString("0.0") ?? "–")<small class="muted">%</small></strong>
+            <span class="moisture-state @state.Css">@state.Label</span>
+        </div>
+        <div class="small-text muted">@(Model.Telemetry?.SensorsReporting ?? 0) of @Model.Sensors probes reporting; irrigate below @Model.Field.MoistureThresholdPct.ToString("0.#")%</div>
+        <div class="foot">
+            @if (Model.Controller is not null)
+            {
+                <partial name="_StatusPill" model="Model.Controller.OperationalStatus" />
+                <span class="small-text muted">@Model.Controller.DeviceId</span>
+            }
+            @if (Model.SensorsWithIssues > 0)
+            {
+                <span class="pill is-fault">@Model.SensorsWithIssues probe@(Model.SensorsWithIssues == 1 ? "" : "s") need attention</span>
+            }
+        </div>
+    </div>
+</a>
