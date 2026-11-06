@@ -1,0 +1,66 @@
+@model SettingsViewModel
+@{
+    ViewData["Title"] = "Account settings";
+}
+
+<div class="page-head">
+    <div>
+        <h1>Account settings</h1>
+        <p class="lede">Signed in as @Model.Email with the <strong>@Model.Role</strong> role.</p>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="panel">
+            <h2 class="panel-title">Profile</h2>
+            <form asp-action="Settings" method="post" novalidate>
+                <div asp-validation-summary="ModelOnly" class="validation-summary-errors mb-2"></div>
+                <div class="mb-3">
+                    <label asp-for="FullName" class="form-label"></label>
+                    <input asp-for="FullName" class="form-control" autocomplete="name" />
+                    <span asp-validation-for="FullName" class="field-validation-error"></span>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="PhoneNumber" class="form-label"></label>
+                    <input asp-for="PhoneNumber" class="form-control" autocomplete="tel" />
+                    <span asp-validation-for="PhoneNumber" class="field-validation-error"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="email-readonly">Email</label>
+                    <input id="email-readonly" class="form-control" value="@Model.Email" readonly />
+                    <div class="form-text">Your email is your sign-in name and can't be changed here.</div>
+                </div>
+                <button type="submit" class="btn btn-farm">Save profile</button>
+            </form>
+            <p class="small-text muted mt-3 mb-0">
+                Member since @Display.When(Model.CreatedAtUtc). Last sign-in @Display.Ago(Model.LastLoginUtc).
+            </p>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="panel">
+            <h2 class="panel-title">Change password</h2>
+            <form asp-action="ChangePassword" method="post" novalidate>
+                <div class="mb-3">
+                    <label class="form-label" for="CurrentPassword">Current password</label>
+                    <input class="form-control" type="password" id="CurrentPassword" name="CurrentPassword" autocomplete="current-password" required />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="NewPassword">New password</label>
+                    <input class="form-control" type="password" id="NewPassword" name="NewPassword" autocomplete="new-password" minlength="8" required />
+                    <div class="form-text">At least 8 characters.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="ConfirmPassword">Confirm new password</label>
+                    <input class="form-control" type="password" id="ConfirmPassword" name="ConfirmPassword" autocomplete="new-password" minlength="8" required />
+                </div>
+                <button type="submit" class="btn btn-ghost">Change password</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

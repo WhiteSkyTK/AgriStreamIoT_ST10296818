@@ -1,0 +1,73 @@
+@model LoginViewModel
+@using AgriStreamIoT.Web.Configuration
+@using AgriStreamIoT.Web.Services.Seeding
+@using Microsoft.Extensions.Options
+@inject IOptionsMonitor<AgriStreamOptions> Options
+@{
+    ViewData["Title"] = "Sign in";
+}
+
+<div class="auth-wrap">
+    <div class="auth-aside">
+        <h1>Good to see you back on the farm.</h1>
+        <p>Sign in to check soil moisture field by field, follow drone imagery as it is processed and start irrigation where it is needed.</p>
+        <ul class="list-unstyled mt-4 d-grid gap-2">
+            <li><i class="bi bi-person-badge me-2" style="color:var(--soil)" aria-hidden="true"></i><strong>Farmers</strong> run irrigation and upload drone flights.</li>
+            <li><i class="bi bi-clipboard2-pulse me-2" style="color:var(--soil)" aria-hidden="true"></i><strong>Agronomists</strong> set each field's moisture threshold and review the data.</li>
+            <li><i class="bi bi-shield-check me-2" style="color:var(--soil)" aria-hidden="true"></i><strong>Admins</strong> manage the device register, users and pipeline.</li>
+        </ul>
+    </div>
+
+    <div class="auth-card">
+        <h2 class="h4 mb-3">Sign in</h2>
+        <form asp-action="Login" method="post" novalidate>
+            <input type="hidden" asp-for="ReturnUrl" />
+            <div asp-validation-summary="ModelOnly" class="validation-summary-errors mb-2" role="alert"></div>
+
+            <div class="mb-3">
+                <label asp-for="Email" class="form-label">Email</label>
+                <input asp-for="Email" class="form-control" autocomplete="username" autofocus />
+                <span asp-validation-for="Email" class="field-validation-error"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label">Password</label>
+                <input asp-for="Password" class="form-control" autocomplete="current-password" />
+                <span asp-validation-for="Password" class="field-validation-error"></span>
+            </div>
+            <div class="form-check mb-3">
+                <input asp-for="RememberMe" class="form-check-input" />
+                <label asp-for="RememberMe" class="form-check-label">Keep me signed in on this device</label>
+            </div>
+            <button type="submit" class="btn btn-farm w-100">Sign in</button>
+        </form>
+        <p class="small-text muted mt-3 mb-0">New to AgriStream? <a asp-action="Register">Create an account</a>.</p>
+
+        @if (Options.CurrentValue.ShowDemoAccounts)
+        {
+            <div class="demo-logins">
+                <div class="small-text muted">Demo accounts (one per role). Select one to fill in the form.</div>
+                @foreach (var demo in FarmSeedData.Users)
+                {
+                    <button type="button" data-demo-email="@demo.Email" data-demo-password="@demo.Password">
+                        <i class="bi @(demo.Role == "Admin" ? "bi-shield-check" : demo.Role == "Agronomist" ? "bi-clipboard2-pulse" : "bi-person-badge")" aria-hidden="true"></i>
+                        <strong>@demo.Role: @demo.FullName</strong>
+                        <small>@demo.Email</small>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        document.querySelectorAll('[data-demo-email]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                document.getElementById('Email').value = button.dataset.demoEmail;
+                document.getElementById('Password').value = button.dataset.demoPassword;
+                document.getElementById('Password').focus();
+            });
+        });
+    </script>
+}

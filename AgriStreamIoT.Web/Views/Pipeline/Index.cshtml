@@ -1,0 +1,204 @@
+@model PipelineViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Serverless pipeline";
+    var h = Model.Health;
+    var sim = Model.Simulator;
+}
+
+<div class="page-head">
+    <div>
+        <h1>Serverless pipeline</h1>
+        <p class="lede">Live health of every Azure component, the irrigation queue and the demo controls for peak daylight bursts. This page was served by instance <strong>@Model.InstanceId</strong>.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="javascript:location.reload()"><i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Check again</a>
+    </div>
+</div>
+
+<div class="flow" aria-label="The four Azure Functions">
+    <div class="flow-step">
+        <div class="kind">Function 1: blob trigger</div>
+        <h3>ProcessDroneImageUpload</h3>
+        <p>drone-images/{name} → validates the image header → audit entry in ImageProcessingAudit (Table Storage).</p>
+    </div>
+    <div class="flow-step">
+        <div class="kind">Function 2: HTTP trigger (GET)</div>
+        <h3>GetLatestTelemetry</h3>
+        <p>/api/telemetry/latest → latest readings, chart series, weather and irrigation from Table Storage for the dashboards.</p>
+    </div>
+    <div class="flow-step">
+        <div class="kind">Function 3: HTTP trigger (POST)</div>
+        <h3>TriggerIrrigation</h3>
+        <p>/api/irrigation/trigger → queue output binding puts the Irrigation Command on irrigation-commands, returns 202.</p>
+    </div>
+    <div class="flow-step">
+        <div class="kind">Function 4: queue trigger</div>
+        <h3>ProcessIrrigationCommand</h3>
+        <p>irrigation-commands → updates the controller in the Azure SQL device register, logs the event, schedules the auto-stop.</p>
+    </div>
+</div>
+
+<div class="row g-3 section">
+    <div class="col-lg-7">
+        <div class="panel h-100">
+            <h2 class="panel-title">
+                <span><i class="bi bi-heart-pulse me-2" aria-hidden="true"></i>Component health</span>
+                <span class="pill @(h.AllOk ? "is-online" : "is-fault")">@(h.AllOk ? "All healthy" : "Needs attention")</span>
+            </h2>
+            <ul class="health-list">
+                @foreach (var c in h.Components)
+                {
+                    <li>
+                        <i class="bi @(c.Ok ? "bi-check-circle-fill ok" : "bi-x-circle-fill bad")" aria-hidden="true"></i>
+                        <div>
+                            <div class="name">@c.Name <span class="muted fw-normal small-text">@c.Role</span></div>
+                            <div class="detail">@c.Detail</div>
+                        </div>
+                        <span class="ms">@(c.LatencyMs is null ? "" : c.LatencyMs + " ms")</span>
+                    </li>
+                }
+            </ul>
+            <p class="small-text muted mt-2 mb-0">Functions base URL: <strong>@(h.FunctionsBaseUrl ?? "not set")</strong>. Checked @Display.Time(h.CheckedAtUtc, "HH:mm:ss").</p>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="panel">
+            <h2 class="panel-title"><span><i class="bi bi-inboxes me-2" aria-hidden="true"></i>irrigation-commands queue</span></h2>
+            <div class="weather-grid">
+                <div class="stat is-water"><span class="stat-label">Waiting or scheduled</span><span class="stat-value">@h.QueueDepth</span></div>
+                <div class="stat @(h.PoisonDepth > 0 ? "is-soil" : "is-leaf")"><span class="stat-label">Poison queue</span><span class="stat-value">@h.PoisonDepth</span></div>
+            </div>
+            <p class="small-text muted mt-2">Scheduled auto-stop messages stay invisible until their cycle ends, so they count here without being visible below.</p>
+            @if (h.QueuedMessages.Count > 0)
+            {
+                <div class="small-text fw-semibold mb-1">Visible messages (peek)</div>
+                @foreach (var m in h.QueuedMessages.Take(3))
+                {
+                    <pre class="code mb-2">@m</pre>
+                }
+            }
+        </div>
+        <div class="panel">
+            <h2 class="panel-title"><span><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Live sensor stream</span>
+                <span class="pill @(sim.Enabled ? "is-online" : "is-offline")">@(sim.Enabled ? "On" : "Paused")</span></h2>
+            <p class="small-text mb-2">
+                Every probe reports every @sim.IntervalSeconds s. Last tick @Display.Ago(sim.LastTickUtc)@(sim.LastTickWasLeader ? " (this instance holds the writer lease)" : sim.LastTickUtc is null ? "" : " (another instance holds the writer lease)").
+                @sim.ReadingsWritten.ToString("N0") readings written by this instance since it started.
+            </p>
+            @if (sim.LastError is not null)
+            {
+                <div class="notice is-error small-text"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i><div>@sim.LastError</div></div>
+            }
+            <form asp-action="ToggleSimulator" method="post">
+                <input type="hidden" name="enabled" value="@(sim.Enabled ? "false" : "true")" />
+                <button type="submit" class="btn btn-sm @(sim.Enabled ? "btn-ghost" : "btn-farm")">@(sim.Enabled ? "Pause the stream" : "Start the stream")</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<section class="section" aria-labelledby="peak-heading">
+    <div class="section-head">
+        <h2 id="peak-heading">Create a peak-hour burst</h2>
+        <span class="small-text muted">Use these while recording the load test, then watch Azure Monitor and Live Metrics</span>
+    </div>
+    <div class="action-grid">
+        <div class="action-card">
+            <h3><i class="bi bi-lightning-charge me-1" aria-hidden="true"></i>Sensor burst</h3>
+            <p>Every reporting probe sends many readings at once. They are written as Table Storage batch transactions (up to 100 rows per request).</p>
+            <form asp-action="SensorBurst" method="post" data-busy="Writing readings…">
+                <select name="readingsPerSensor" class="form-select" aria-label="Readings per probe">
+                    <option value="10">10 per probe</option>
+                    <option value="30" selected>30 per probe</option>
+                    <option value="60">60 per probe</option>
+                </select>
+                <button type="submit" class="btn btn-farm btn-sm">Send burst</button>
+            </form>
+        </div>
+        <div class="action-card">
+            <h3><i class="bi bi-moisture me-1" aria-hidden="true"></i>Dry-soil alert</h3>
+            <p>A field's probes report dry soil. The automation calls TriggerIrrigation straight away, and you can follow the command through the queue.</p>
+            <form asp-action="DrySoilAlert" method="post" data-busy="Raising alert…">
+                <select name="fieldId" class="form-select" aria-label="Field">
+                    @foreach (var f in Model.Fields)
+                    {
+                        <option value="@f.FieldId">@f.FieldId: @f.Name</option>
+                    }
+                </select>
+                <button type="submit" class="btn btn-water btn-sm">Raise alert</button>
+            </form>
+        </div>
+        <div class="action-card">
+            <h3><i class="bi bi-airplane me-1" aria-hidden="true"></i>Drone flight burst</h3>
+            <p>Synthetic aerial photos are generated and uploaded to drone-images in parallel. Each one fires the blob trigger.</p>
+            <form asp-action="DroneBurst" method="post" data-busy="Uploading flight…">
+                <select name="count" class="form-select" aria-label="Number of images">
+                    <option value="5">5 images</option>
+                    <option value="10" selected>10 images</option>
+                    <option value="25">25 images</option>
+                    <option value="50">50 images</option>
+                </select>
+                <select name="width" class="form-select" aria-label="Resolution">
+                    <option value="1600">1600 × 1200</option>
+                    <option value="2048" selected>2048 × 1536</option>
+                    <option value="4000">4000 × 3000</option>
+                </select>
+                <input type="hidden" name="height" value="0" id="burst-height" />
+                <button type="submit" class="btn btn-farm btn-sm">Upload flight</button>
+            </form>
+        </div>
+        <div class="action-card">
+            <h3><i class="bi bi-calendar-check me-1" aria-hidden="true"></i>Back-fill history</h3>
+            <p>Fills any gap in the sample telemetry since the last reading, up to 24 hours (for example after the app was stopped overnight).</p>
+            <form asp-action="Backfill" method="post" data-busy="Back-filling…">
+                <button type="submit" class="btn btn-ghost btn-sm">Back-fill now</button>
+            </form>
+        </div>
+    </div>
+</section>
+
+<div class="row g-3 section">
+    <div class="col-lg-7">
+        <div class="panel h-100">
+            <h2 class="panel-title"><span><i class="bi bi-robot me-2" aria-hidden="true"></i>Sensor automation on this instance</span></h2>
+            @if (Model.RecentActions.Count == 0)
+            {
+                <div class="empty">No automatic irrigation requests yet. They appear when a field's average soil moisture drops below its threshold.</div>
+            }
+            else
+            {
+                <ul class="event-list">
+                    @foreach (var a in Model.RecentActions)
+                    {
+                        <li>
+                            <time>@Display.Time(a.AtUtc, "HH:mm:ss")</time>
+                            <div><div class="what">@a.FieldId → @a.DeviceId</div><div class="why">@a.Detail</div></div>
+                            <span class="pill @(a.Outcome == "Queued" ? "is-applied" : a.Outcome == "Failed" ? "is-failed" : "is-ignored")">@a.Outcome</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="panel h-100">
+            <h2 class="panel-title"><span><i class="bi bi-hdd-rack me-2" aria-hidden="true"></i>This App Service instance</span><a class="small-text" href="/api/instance" target="_blank" rel="noopener">/api/instance</a></h2>
+            <pre class="code">@JsonSerializer.Serialize(Model.Instance, new JsonSerializerOptions { WriteIndented = true })</pre>
+            <p class="small-text muted mt-2 mb-0">After autoscale adds instances, refreshing this page (with ARR affinity off) shows different instance ids; the load tester counts them from the X-Served-By header.</p>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Keep the drone burst at a 4:3 aspect ratio.
+        (function () {
+            const width = document.querySelector('select[name="width"]');
+            const height = document.getElementById('burst-height');
+            const sync = () => { height.value = Math.round(Number(width.value) * 3 / 4); };
+            width.addEventListener('change', sync);
+            sync();
+        })();
+    </script>
+}

@@ -1,0 +1,158 @@
+@model DashboardViewModel
+@using AgriStreamIoT.Shared.Constants
+@using AgriStreamIoT.Shared.Time
+@{
+    ViewData["Title"] = "Farm overview";
+    var withData = Model.Fields.Where(f => f.Telemetry?.AvgSoilMoisturePct is not null).ToList();
+    var farmMoisture = withData.Count == 0 ? (double?)null : withData.Average(f => f.Telemetry!.AvgSoilMoisturePct!.Value);
+    var belowThreshold = withData.Count(f => f.Telemetry!.AvgSoilMoisturePct < (double)f.Field.MoistureThresholdPct);
+    var online = Model.DeviceCounts.GetValueOrDefault(DeviceStatuses.Online) + Model.DeviceCounts.GetValueOrDefault(DeviceStatuses.Irrigating);
+    var irrigating = Model.DeviceCounts.GetValueOrDefault(DeviceStatuses.Irrigating);
+    var weather = Model.Telemetry?.Snapshot.Environment;
+}
+
+<div class="page-head">
+    <div>
+        <div class="crumbs">@FarmClock.NowLocal.ToString("dddd d MMMM yyyy, HH:mm") SAST</div>
+        <h1>Farm overview</h1>
+        <p class="lede">Hello @User.DisplayName().Split(' ')[0]. Here is how the soil is holding up across the farm.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-farm" asp-controller="Media" asp-action="Upload"><i class="bi bi-cloud-arrow-up me-1" aria-hidden="true"></i>Upload drone images</a>
+        <a class="btn btn-ghost" asp-controller="Devices" asp-action="Index">Device register</a>
+    </div>
+</div>
+
+<div class="strip" role="group" aria-label="Farm totals">
+    <div class="strip-cell">
+        <span class="strip-value">@(farmMoisture?.ToString("0.0") ?? "–")<small>%</small></span>
+        <span class="strip-label">Average soil moisture</span>
+    </div>
+    <div class="strip-cell">
+        <span class="strip-value" style="color:@(belowThreshold > 0 ? "var(--dry)" : "inherit")">@belowThreshold<small>of @Model.Fields.Count</small></span>
+        <span class="strip-label">Fields below their threshold</span>
+    </div>
+    <div class="strip-cell">
+        <span class="strip-value">@online<small>of @Model.TotalDevices</small></span>
+        <span class="strip-label">Devices online</span>
+    </div>
+    <div class="strip-cell">
+        <span class="strip-value" style="color:@(irrigating > 0 ? "var(--water)" : "inherit")">@irrigating</span>
+        <span class="strip-label">Controllers irrigating now</span>
+    </div>
+    <div class="strip-cell">
+        <span class="strip-value">@Model.ImagesProcessedToday</span>
+        <span class="strip-label">Drone images processed today</span>
+    </div>
+    <div class="strip-cell">
+        <span class="strip-value">@Display.Litres(Model.WaterTodayLitres)</span>
+        <span class="strip-label">Water applied today (recent cycles)</span>
+    </div>
+</div>
+
+@if (Model.Telemetry is not null)
+{
+    <div class="source-line @(Model.Telemetry.ViaFunction ? "" : "is-fallback")">
+        <span><i class="bi @(Model.Telemetry.ViaFunction ? "bi-lightning-charge-fill" : "bi-exclamation-triangle-fill") me-1" aria-hidden="true"></i>@Model.Telemetry.SourceLabel</span>
+        <span>@Model.Telemetry.ElapsedMs.ToString("0") ms</span>
+        @if (Model.Telemetry.Snapshot.Cached) { <span>cached @Model.Telemetry.Snapshot.CacheAgeSeconds.ToString("0") s</span> }
+        @if (!string.IsNullOrEmpty(Model.Telemetry.FunctionServedBy)) { <span>served by @Model.Telemetry.FunctionServedBy</span> }
+        @if (!Model.Telemetry.ViaFunction && Model.Telemetry.FunctionError is not null) { <span title="@Model.Telemetry.FunctionError">Function error: @Model.Telemetry.FunctionError</span> }
+    </div>
+}
+
+<section class="section" aria-labelledby="fields-heading">
+    <div class="section-head">
+        <h2 id="fields-heading">Fields</h2>
+        <span class="small-text muted">Blue fill = soil moisture; dashed line = irrigation threshold</span>
+    </div>
+    <div class="field-grid">
+        @foreach (var card in Model.Fields)
+        {
+            <partial name="_FieldCard" model="card" />
+        }
+    </div>
+</section>
+
+<div class="row g-3 section">
+    <div class="col-lg-7">
+        <div class="panel h-100">
+            <h2 class="panel-title"><span><i class="bi bi-droplet-half me-2" aria-hidden="true"></i>Recent irrigation</span>
+                <a class="small-text" asp-controller="Telemetry" asp-action="Index" asp-route-tab="irrigation">All events</a></h2>
+            @if (Model.RecentIrrigation.Count == 0)
+            {
+                <div class="empty"><i class="bi bi-droplet" aria-hidden="true"></i>No irrigation commands yet. Open a field and choose Trigger irrigation.</div>
+            }
+            else
+            {
+                <ul class="event-list">
+                    @foreach (var e in Model.RecentIrrigation)
+                    {
+                        <li>
+                            <time datetime="@e.ProcessedAtUtc.ToString("o")">@Display.Time(e.ProcessedAtUtc)</time>
+                            <div>
+                                <div class="what">@e.Action @e.DeviceId <span class="muted fw-normal">(@e.FieldId)</span></div>
+                                <div class="why">@(e.OutcomeDetail ?? e.Reason)</div>
+                                <div class="why">@e.Trigger by @e.RequestedBy@(e.LatencySeconds > 0 && e.Trigger != CommandTriggers.AutoStop ? $", applied {e.LatencySeconds:0.#} s after the request" : "")</div>
+                            </div>
+                            <span class="pill is-@e.Outcome.ToLowerInvariant()">@e.Outcome</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="panel">
+            <h2 class="panel-title"><span><i class="bi bi-cloud-sun me-2" aria-hidden="true"></i>Weather station WS-01</span>
+                <span class="small-text muted">@Display.Ago(weather?.ReadingUtc)</span></h2>
+            @if (weather is null)
+            {
+                <div class="empty">No weather logs yet.</div>
+            }
+            else
+            {
+                <div class="weather-grid">
+                    <div class="stat is-grain"><span class="stat-label">Air temperature</span><span class="stat-value">@weather.AirTemperatureC.ToString("0.0") °C</span></div>
+                    <div class="stat is-water"><span class="stat-label">Humidity</span><span class="stat-value">@weather.HumidityPct.ToString("0")%</span></div>
+                    <div class="stat is-leaf"><span class="stat-label">Wind</span><span class="stat-value">@weather.WindSpeedKmh.ToString("0") km/h</span></div>
+                    <div class="stat is-soil"><span class="stat-label">Evapotranspiration (10 min)</span><span class="stat-value">@weather.Et0Mm.ToString("0.00") mm</span></div>
+                    <div class="stat is-grain"><span class="stat-label">Solar radiation</span><span class="stat-value">@weather.SolarRadiationWm2.ToString("0") W/m²</span></div>
+                    <div class="stat is-water"><span class="stat-label">Rain</span><span class="stat-value">@weather.RainfallMm.ToString("0.0") mm</span></div>
+                </div>
+                @if (weather.AlertLevel != "None" && !string.IsNullOrEmpty(weather.Notes))
+                {
+                    <div class="alert-line @(weather.AlertLevel == "Warning" ? "is-warning" : "")"><i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>@weather.Notes</div>
+                }
+            }
+        </div>
+        <div class="panel">
+            <h2 class="panel-title"><span><i class="bi bi-airplane me-2" aria-hidden="true"></i>Latest drone images</span>
+                <a class="small-text" asp-controller="Media" asp-action="Index" asp-route-category="drone">Gallery</a></h2>
+            @if (Model.StorageWarning is not null)
+            {
+                <div class="notice is-warn small-text"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i><div>@Model.StorageWarning</div></div>
+            }
+            @if (Model.RecentAudits.Count == 0)
+            {
+                <div class="empty"><i class="bi bi-images" aria-hidden="true"></i>No drone images processed yet.</div>
+            }
+            else
+            {
+                <ul class="event-list">
+                    @foreach (var a in Model.RecentAudits)
+                    {
+                        <li>
+                            <time>@Display.Time(a.ProcessedAtUtc ?? a.UploadedAtUtc)</time>
+                            <div>
+                                <div class="what text-break">@(a.OriginalFileName ?? a.BlobName)</div>
+                                <div class="why">@a.FieldId, @Display.Bytes(a.SizeBytes)@(a.WidthPx > 0 ? $", {a.WidthPx}×{a.HeightPx}" : "")</div>
+                            </div>
+                            <span class="pill is-@a.Status.ToLowerInvariant()">@a.Status</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+</div>

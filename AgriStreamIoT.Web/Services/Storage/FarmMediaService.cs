@@ -102,7 +102,11 @@ public sealed class FarmMediaService : IFarmMediaService
         var items = new List<MediaItem>();
         foreach (var container in containers)
         {
-            await foreach (var blob in container.GetBlobsAsync(traits: BlobTraits.Metadata, prefix: prefix, cancellationToken: cancellationToken))
+            await foreach (var blob in container.GetBlobsAsync(
+                traits: BlobTraits.Metadata,
+                states: BlobStates.None,
+                prefix: prefix,
+                cancellationToken: cancellationToken))
             {
                 var meta = new Dictionary<string, string>(blob.Metadata ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
                 items.Add(new MediaItem

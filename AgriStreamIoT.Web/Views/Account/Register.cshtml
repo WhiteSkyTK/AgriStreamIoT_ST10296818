@@ -1,0 +1,70 @@
+@model RegisterViewModel
+@{
+    ViewData["Title"] = "Create an account";
+}
+
+<div class="auth-wrap">
+    <div class="auth-aside">
+        <h1>Join the farm team.</h1>
+        <p>Accounts are stored in the farm's Azure SQL database with a hashed password. Choose the role that matches your work; an administrator can change it later.</p>
+    </div>
+
+    <div class="auth-card">
+        <h2 class="h4 mb-3">Create an account</h2>
+        <form asp-action="Register" method="post" novalidate>
+            <div asp-validation-summary="ModelOnly" class="validation-summary-errors mb-2" role="alert"></div>
+
+            <div class="mb-3">
+                <label asp-for="FullName" class="form-label"></label>
+                <input asp-for="FullName" class="form-control" autocomplete="name" />
+                <span asp-validation-for="FullName" class="field-validation-error"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Email" class="form-label">Email</label>
+                <input asp-for="Email" class="form-control" autocomplete="email" />
+                <span asp-validation-for="Email" class="field-validation-error"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="PhoneNumber" class="form-label"></label>
+                <input asp-for="PhoneNumber" class="form-control" autocomplete="tel" placeholder="Optional" />
+                <span asp-validation-for="PhoneNumber" class="field-validation-error"></span>
+            </div>
+
+            <fieldset class="mb-3">
+                <legend class="form-label">Your role on the farm</legend>
+                <div class="choice-row">
+                    <label class="choice">
+                        <input type="radio" asp-for="Role" value="Farmer" id="role-farmer" />
+                        <strong>Farmer</strong>
+                        <span>Run irrigation, upload drone flights</span>
+                    </label>
+                    <label class="choice">
+                        <input type="radio" asp-for="Role" value="Agronomist" id="role-agronomist" />
+                        <strong>Agronomist</strong>
+                        <span>Set thresholds, review field data</span>
+                    </label>
+                </div>
+                <span asp-validation-for="Role" class="field-validation-error"></span>
+            </fieldset>
+
+            <div class="row g-2 mb-3">
+                <div class="col-sm-6">
+                    <label asp-for="Password" class="form-label">Password</label>
+                    <input asp-for="Password" class="form-control" autocomplete="new-password" />
+                    <span asp-validation-for="Password" class="field-validation-error"></span>
+                </div>
+                <div class="col-sm-6">
+                    <label asp-for="ConfirmPassword" class="form-label"></label>
+                    <input asp-for="ConfirmPassword" class="form-control" autocomplete="new-password" />
+                    <span asp-validation-for="ConfirmPassword" class="field-validation-error"></span>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-farm w-100">Create account</button>
+        </form>
+        <p class="small-text muted mt-3 mb-0">Already registered? <a asp-action="Login">Sign in</a>.</p>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

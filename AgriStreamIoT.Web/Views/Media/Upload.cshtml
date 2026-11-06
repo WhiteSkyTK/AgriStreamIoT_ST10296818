@@ -1,0 +1,77 @@
+@model MediaUploadViewModel
+@{
+    ViewData["Title"] = "Upload drone images & media";
+}
+
+<div class="crumbs"><a asp-action="Index">Drone &amp; media</a> / Upload</div>
+<div class="page-head">
+    <div>
+        <h1>Upload drone images &amp; media</h1>
+        <p class="lede">Select a whole flight at once. Files are streamed to Azure Blob Storage in parallel 4 MB blocks (up to 200 MB each).</p>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="panel">
+            <form id="upload-form" asp-action="Upload" method="post" enctype="multipart/form-data" novalidate>
+                <fieldset class="mb-3">
+                    <legend class="form-label">What are you uploading?</legend>
+                    <div class="choice-row">
+                        <label class="choice">
+                            <input type="radio" name="category" value="DroneImagery" id="cat-drone" checked="@(Model.Category == MediaCategory.DroneImagery)" />
+                            <strong><i class="bi bi-airplane me-1" aria-hidden="true"></i>Drone imagery</strong>
+                            <span>drone-images container; triggers the processing function</span>
+                        </label>
+                        <label class="choice">
+                            <input type="radio" name="category" value="FarmMedia" id="cat-media" checked="@(Model.Category == MediaCategory.FarmMedia)" />
+                            <strong><i class="bi bi-folder2-open me-1" aria-hidden="true"></i>Other farm media</strong>
+                            <span>farm-media container; photos, soil reports, videos</span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <div class="mb-3">
+                    <label class="form-label" for="fieldId">Field</label>
+                    <select class="form-select" id="fieldId" name="fieldId" required>
+                        <option value="">Choose the field…</option>
+                        @foreach (var f in Model.Fields)
+                        {
+                            <option value="@f.FieldId" selected="@(Model.FieldId == f.FieldId)">@f.FieldId: @f.Name (@f.Crop)</option>
+                        }
+                    </select>
+                </div>
+
+                <label class="dropzone d-block" id="dropzone" for="files">
+                    <i class="bi bi-cloud-arrow-up" aria-hidden="true"></i>
+                    <div class="fw-semibold mt-1">Drop files here or choose them</div>
+                    <div class="small-text muted">JPEG, PNG, TIFF, WebP for drone imagery. Any file for farm media.</div>
+                    <input class="visually-hidden" type="file" id="files" name="files" multiple />
+                </label>
+                <ul class="file-list" id="file-list" hidden></ul>
+                <div class="progress-farm" id="progress" hidden><div></div></div>
+                <div id="upload-result" class="mt-3" aria-live="polite"></div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-farm" id="upload-button"><i class="bi bi-upload me-1" aria-hidden="true"></i>Upload</button>
+                    <a class="btn btn-ghost" asp-action="Index">Back to gallery</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="panel is-sunk">
+            <h2 class="panel-title">What happens next</h2>
+            <ol class="tracker">
+                <li class="is-done"><i class="bi bi-1-circle" aria-hidden="true"></i><div>The web app streams each file to Blob Storage with its field and uploader as metadata.</div></li>
+                <li class="is-done"><i class="bi bi-2-circle" aria-hidden="true"></i><div>The <strong>ProcessDroneImageUpload</strong> blob trigger fires once per image, on as many function instances as the burst needs.</div></li>
+                <li class="is-done"><i class="bi bi-3-circle" aria-hidden="true"></i><div>It reads only the image header to check the format and resolution, then writes Processing and Processed (or Rejected) to the audit table.</div></li>
+                <li class="is-done"><i class="bi bi-4-circle" aria-hidden="true"></i><div>The gallery shows each image's audit status as it arrives.</div></li>
+            </ol>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/media-upload.js" asp-append-version="true"></script>
+}

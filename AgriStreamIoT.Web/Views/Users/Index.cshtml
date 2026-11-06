@@ -1,0 +1,61 @@
+@model UsersViewModel
+@using AgriStreamIoT.Shared.Constants
+@{
+    ViewData["Title"] = "Users and roles";
+}
+
+<div class="page-head">
+    <div>
+        <h1>Users and roles</h1>
+        <p class="lede">Logins are stored in Azure SQL (dbo.Users) with PBKDF2-hashed passwords. Role changes apply the next time the person signs in.</p>
+    </div>
+</div>
+
+<div class="panel is-flush">
+    <div class="table-scroll">
+        <table class="table-farm">
+            <thead>
+                <tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Last sign-in</th><th scope="col">Actions</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Model.Users)
+                {
+                    var isMe = u.UserId == Model.CurrentUserId;
+                    <tr>
+                        <td><strong>@u.FullName</strong>@(isMe ? " (you)" : "")<div class="small-text muted">@u.PhoneNumber</div></td>
+                        <td>@u.Email</td>
+                        <td>
+                            <form asp-action="SetRole" method="post" class="d-flex gap-2 align-items-center">
+                                <input type="hidden" name="id" value="@u.UserId" />
+                                <select name="role" class="form-select form-select-sm" style="width:auto" aria-label="Role for @u.FullName">
+                                    @foreach (var r in UserRoles.All)
+                                    {
+                                        <option value="@r" selected="@(r == u.Role)">@r</option>
+                                    }
+                                </select>
+                                <button type="submit" class="btn btn-ghost btn-sm">Save</button>
+                            </form>
+                        </td>
+                        <td>
+                            @if (u.IsActive) { <span class="pill is-online">Active</span> }
+                            else { <span class="pill is-offline">Deactivated</span> }
+                        </td>
+                        <td class="nowrap">@Display.Ago(u.LastLoginUtc)</td>
+                        <td>
+                            @if (!isMe)
+                            {
+                                <form asp-action="SetActive" method="post"
+                                      data-confirm="@(u.IsActive ? $"Stop {u.FullName} from signing in?" : $"Let {u.FullName} sign in again?")"
+                                      data-confirm-label="@(u.IsActive ? "Deactivate" : "Reactivate")">
+                                    <input type="hidden" name="id" value="@u.UserId" />
+                                    <input type="hidden" name="active" value="@(u.IsActive ? "false" : "true")" />
+                                    <button type="submit" class="btn btn-sm @(u.IsActive ? "btn-danger-soft" : "btn-ghost")">@(u.IsActive ? "Deactivate" : "Reactivate")</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

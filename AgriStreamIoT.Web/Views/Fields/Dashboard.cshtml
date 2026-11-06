@@ -1,0 +1,261 @@
+@model FieldDashboardViewModel
+@using System.Text.Json
+@using AgriStreamIoT.Shared.Constants
+@using AgriStreamIoT.Shared.Messages
+@{
+    ViewData["Title"] = Model.Field.Name;
+    var snapshot = Model.Telemetry!.Snapshot;
+    var summary = snapshot.Fields.FirstOrDefault();
+    var moisture = summary?.AvgSoilMoisturePct;
+    var state = Display.MoistureState(moisture, Model.Field.MoistureThresholdPct);
+    var sensors = Model.Devices.Where(d => d.DeviceType == DeviceTypes.SoilSensor).OrderBy(d => d.DeviceId, StringComparer.Ordinal).ToList();
+    var readings = snapshot.LatestReadings.ToDictionary(r => r.DeviceId);
+    var controller = Model.Controller;
+    var config = new
+    {
+        fieldId = Model.Field.FieldId,
+        hours = Model.Hours,
+        threshold = Model.Field.MoistureThresholdPct,
+        sensors = sensors.Select(s => s.DeviceId).ToArray(),
+        controllerId = controller?.DeviceId,
+        canIrrigate = Model.CanIrrigate,
+        urls = new
+        {
+            telemetry = Url.Action("Telemetry", "Fields", new { id = Model.Field.FieldId }),
+            outlook = Url.Action("Outlook", "Fields", new { id = Model.Field.FieldId }),
+            trigger = Url.Action("TriggerIrrigation", "Fields"),
+            commandStatus = Url.Action("CommandStatus", "Fields")
+        }
+    };
+}
+
+<div class="crumbs"><a asp-controller="Dashboard" asp-action="Index">Farm overview</a> / Fields / @Model.Field.FieldId</div>
+<div class="page-head">
+    <div>
+        <h1>@Model.Field.Name</h1>
+        <p class="lede">@Model.Field.Crop on @Model.Field.AreaHectares.ToString("0.#") ha of @Model.Field.SoilType.ToLowerInvariant(), watered by @Model.Field.IrrigationMethod.ToLowerInvariant().</p>
+    </div>
+    <div class="page-actions">
+        <label class="visually-hidden" for="field-switch">Go to another field</label>
+        <select id="field-switch" class="form-select" style="width:auto">
+            @foreach (var f in Model.AllFields)
+            {
+                <option value="@Url.Action("Dashboard", "Fields", new { id = f.FieldId, hours = Model.Hours })" selected="@(f.FieldId == Model.Field.FieldId)">@f.FieldId: @f.Name</option>
+            }
+        </select>
+        @if (Model.CanEditField)
+        {
+            <a class="btn btn-ghost" asp-action="Edit" asp-route-id="@Model.Field.FieldId"><i class="bi bi-sliders me-1" aria-hidden="true"></i>Threshold &amp; agronomy</a>
+        }
+        <a class="btn btn-farm" asp-controller="Media" asp-action="Upload" asp-route-field="@Model.Field.FieldId"><i class="bi bi-cloud-arrow-up me-1" aria-hidden="true"></i>Upload drone images</a>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="field-hero">
+        <div class="hero-gauge">
+            <div id="hero-gauge" class="gauge is-lg @(state.Css == "is-dry" ? "is-dry" : "")"
+                 style="--level:@Display.GaugePercent(moisture)%;--threshold:@Display.GaugePercent((double)Model.Field.MoistureThresholdPct)%"
+                 role="img" aria-label="Average soil moisture @(moisture?.ToString("0.0") ?? "unknown")%, threshold @Model.Field.MoistureThresholdPct.ToString("0.#")%">
+                <div class="gauge-water"></div>
+                <div class="gauge-threshold"></div>
+            </div>
+            <div class="gauge-readout">
+                <span class="gauge-caption">Average soil moisture</span>
+                <span class="gauge-value"><span id="avg-moisture">@(moisture?.ToString("0.0") ?? "–")</span><small>%</small></span>
+                <span id="moisture-state" class="moisture-state @state.Css">@state.Label</span>
+                <span class="gauge-caption">Irrigate below @Model.Field.MoistureThresholdPct.ToString("0.#")%</span>
+            </div>
+        </div>
+
+        <div class="hero-stats" aria-live="polite">
+            <div class="stat is-soil"><span class="stat-label">Lowest probe</span><span class="stat-value" id="stat-min">@(summary?.MinSoilMoisturePct?.ToString("0.0") ?? "–")%</span></div>
+            <div class="stat is-grain"><span class="stat-label">Soil temperature</span><span class="stat-value" id="stat-temp">@(summary?.AvgSoilTemperatureC?.ToString("0.0") ?? "–") °C</span></div>
+            <div class="stat is-leaf"><span class="stat-label">Soil pH</span><span class="stat-value" id="stat-ph">@(summary?.AvgSoilPh?.ToString("0.00") ?? "–")</span></div>
+            <div class="stat is-soil"><span class="stat-label">Salinity (EC)</span><span class="stat-value" id="stat-ec">@(summary?.AvgSoilEcDsM?.ToString("0.00") ?? "–") dS/m</span></div>
+            <div class="stat is-water"><span class="stat-label">Probes reporting</span><span class="stat-value" id="stat-sensors">@(summary?.SensorsReporting ?? 0) of @sensors.Count</span></div>
+            <div class="stat is-leaf"><span class="stat-label">Last reading</span><span class="stat-value" id="stat-last">@Display.Time(summary?.LatestReadingUtc, "HH:mm:ss")</span></div>
+        </div>
+
+        <div class="irrigate-panel panel is-sunk">
+            <h2 class="panel-title mb-0"><span><i class="bi bi-droplet-half me-2" aria-hidden="true"></i>Irrigation</span></h2>
+            @if (controller is null)
+            {
+                <p class="muted mb-0">No irrigation controller is registered for this field.</p>
+            }
+            else
+            {
+                <div class="controller-line">
+                    <span><strong>@controller.DeviceId</strong><br /><span class="small-text muted">@controller.DeviceName</span></span>
+                    <span id="controller-status" class="pill @Display.StatusClass(controller.OperationalStatus)">@controller.OperationalStatus</span>
+                </div>
+                <div class="small-text muted" id="controller-detail">
+                    @if (controller.OperationalStatus == DeviceStatuses.Irrigating && controller.IrrigationEndsAtUtc is not null)
+                    {
+                        @:Irrigating until @Display.Time(controller.IrrigationEndsAtUtc). Last command @controller.LastCommandId.
+                    }
+                    else if (controller.LastCommandId is not null)
+                    {
+                        @:Last command @controller.LastCommandAction at @Display.When(controller.LastCommandAtUtc).
+                    }
+                    else
+                    {
+                        @:No commands yet.
+                    }
+                </div>
+
+                @if (Model.CanIrrigate)
+                {
+                    <form id="irrigate-form" class="d-grid gap-2" method="post" asp-antiforgery="true" novalidate>
+                        <input type="hidden" name="FieldId" value="@Model.Field.FieldId" />
+                        <input type="hidden" name="DeviceId" value="@controller.DeviceId" />
+                        <fieldset>
+                            <legend class="form-label">Run for</legend>
+                            <div class="duration-row">
+                                @foreach (var minutes in new[] { 15, 30, 60, 120 })
+                                {
+                                    <label><input type="radio" name="DurationMinutes" value="@minutes" @(minutes == 30 ? "checked" : "") /><span>@(minutes < 60 ? $"{minutes} min" : $"{minutes / 60} h")</span></label>
+                                }
+                            </div>
+                        </fieldset>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-water flex-grow-1" data-action="START"><i class="bi bi-play-fill me-1" aria-hidden="true"></i>Trigger irrigation</button>
+                            <button type="submit" class="btn btn-ghost" data-action="STOP"><i class="bi bi-stop-fill me-1" aria-hidden="true"></i>Stop</button>
+                        </div>
+                        @if (DeviceStatuses.BlocksIrrigation(controller.OperationalStatus))
+                        {
+                            <div class="small-text" style="color:var(--watch)">The controller is @controller.OperationalStatus.ToLowerInvariant(): the device register will refuse a START (safety interlock).</div>
+                        }
+                    </form>
+                    <ol id="tracker" class="tracker" hidden aria-live="polite"></ol>
+                }
+                else
+                {
+                    <p class="small-text muted mb-0">Irrigation control is for farmers and admins. You can see the controller's status here.</p>
+                }
+            }
+        </div>
+    </div>
+
+    <div id="source-line" class="source-line @(Model.Telemetry.ViaFunction ? "" : "is-fallback")">
+        <span><span class="live-dot me-1" aria-hidden="true"></span><span id="source-label">@Model.Telemetry.SourceLabel</span></span>
+        <span id="source-ms">@Model.Telemetry.ElapsedMs.ToString("0") ms</span>
+        <span id="source-cache">@(snapshot.Cached ? $"cached {snapshot.CacheAgeSeconds:0} s" : $"query {snapshot.QueryMs:0} ms, {snapshot.RowsRead} rows")</span>
+        <span id="source-served">@(Model.Telemetry.FunctionServedBy is null ? "" : "served by " + Model.Telemetry.FunctionServedBy)</span>
+        <span>Refreshes every 15 s</span>
+    </div>
+    @if (!Model.Telemetry.ViaFunction && Model.Telemetry.FunctionError is not null)
+    {
+        <div class="notice is-warn mt-2 mb-0 small-text"><i class="bi bi-plug" aria-hidden="true"></i><div>GetLatestTelemetry could not be reached, so this page read Table Storage directly. @Model.Telemetry.FunctionError</div></div>
+    }
+</div>
+
+<div class="row g-3 section">
+    <div class="col-xl-8">
+        <div class="panel h-100">
+            <h2 class="panel-title">
+                <span><i class="bi bi-graph-up me-2" aria-hidden="true"></i>Soil moisture by probe</span>
+                <span class="seg" role="group" aria-label="Time window">
+                    @foreach (var h in new[] { 6, 12, 24, 48 })
+                    {
+                        <a class="@(h == Model.Hours ? "active" : "")" asp-action="Dashboard" asp-route-id="@Model.Field.FieldId" asp-route-hours="@h">@h h</a>
+                    }
+                </span>
+            </h2>
+            <div id="moisture-legend" class="chart-legend"></div>
+            <div class="chart-box"><canvas id="moisture-chart" aria-label="Soil moisture over the last @Model.Hours hours for each probe, with the irrigation threshold" role="img"></canvas></div>
+            <p class="small-text muted mt-2 mb-0">@snapshot.SeriesBucketMinutes-minute averages. Rises show irrigation cycles or rain; the dashed line is the irrigation threshold.</p>
+        </div>
+    </div>
+    <div class="col-xl-4">
+        <div class="panel h-100">
+            <h2 class="panel-title"><span><i class="bi bi-cloud-sun me-2" aria-hidden="true"></i>48-hour moisture outlook</span></h2>
+            <div class="chart-box is-short"><canvas id="outlook-chart" role="img" aria-label="Forecast soil moisture range for the next 48 hours"></canvas></div>
+            <p id="outlook-text" class="small-text muted mt-2 mb-0">Running 20 000 weather scenarios…</p>
+        </div>
+    </div>
+</div>
+
+<section class="section" aria-labelledby="probes-heading">
+    <div class="section-head">
+        <h2 id="probes-heading">Probes in this field</h2>
+        <a class="small-text" asp-controller="Telemetry" asp-action="Index" asp-route-field="@Model.Field.FieldId">Raw readings</a>
+    </div>
+    <div class="sensor-grid" id="sensor-grid">
+        @foreach (var sensor in sensors)
+        {
+            readings.TryGetValue(sensor.DeviceId, out var r);
+            <div class="sensor" data-sensor="@sensor.DeviceId">
+                <div class="sensor-head">
+                    <a class="id" asp-controller="Devices" asp-action="Details" asp-route-id="@sensor.DeviceId">@sensor.DeviceId</a>
+                    <partial name="_StatusPill" model="sensor.OperationalStatus" />
+                </div>
+                <dl>
+                    <dt>Moisture</dt><dd data-k="soilMoisturePct" data-u="%">@(r?.SoilMoisturePct.ToString("0.0") ?? "–")%</dd>
+                    <dt>Soil temperature</dt><dd data-k="soilTemperatureC" data-u=" °C">@(r?.SoilTemperatureC.ToString("0.0") ?? "–") °C</dd>
+                    <dt>pH</dt><dd data-k="soilPh" data-u="">@(r?.SoilPh.ToString("0.00") ?? "–")</dd>
+                    <dt>EC</dt><dd data-k="soilEcDsM" data-u=" dS/m">@(r?.SoilEcDsM.ToString("0.00") ?? "–") dS/m</dd>
+                    <dt>Nitrogen</dt><dd data-k="nitrogenPpm" data-u=" ppm">@(r?.NitrogenPpm.ToString("0") ?? "–") ppm</dd>
+                    <dt>Battery</dt><dd data-k="batteryPct" data-u="%">@(r?.BatteryPct.ToString() ?? "–")%</dd>
+                    <dt>Signal</dt><dd data-k="signalDbm" data-u=" dBm">@(r?.SignalDbm.ToString() ?? "–") dBm</dd>
+                </dl>
+                <div class="age" data-k="age">@(r is null ? "No reading in this window" : "Reported " + Display.Ago(r.ReadingUtc))</div>
+                @if (!string.IsNullOrEmpty(sensor.Notes))
+                {
+                    <div class="small-text mt-1" style="color:var(--watch)">@sensor.Notes</div>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+<div class="row g-3 section">
+    <div class="col-lg-7">
+        <div class="panel h-100">
+            <h2 class="panel-title"><span><i class="bi bi-clock-history me-2" aria-hidden="true"></i>Irrigation events for this field</span></h2>
+            <ul class="event-list" id="event-list">
+                @if (snapshot.RecentIrrigation.Count == 0)
+                {
+                    <li class="empty">No irrigation events yet.</li>
+                }
+                @foreach (var e in snapshot.RecentIrrigation)
+                {
+                    <li>
+                        <time>@Display.Time(e.ProcessedAtUtc)</time>
+                        <div><div class="what">@e.Action @e.DeviceId</div><div class="why">@(e.OutcomeDetail ?? e.Reason)</div><div class="why">@e.Trigger by @e.RequestedBy</div></div>
+                        <span class="pill is-@e.Outcome.ToLowerInvariant()">@e.Outcome</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="panel h-100">
+            <h2 class="panel-title"><span><i class="bi bi-thermometer-sun me-2" aria-hidden="true"></i>Conditions at WS-01</span><span class="small-text muted" id="weather-age">@Display.Ago(snapshot.Environment?.ReadingUtc)</span></h2>
+            @if (snapshot.Environment is { } w)
+            {
+                <div class="weather-grid" id="weather-grid">
+                    <div class="stat is-grain"><span class="stat-label">Air</span><span class="stat-value" data-w="airTemperatureC" data-u=" °C">@w.AirTemperatureC.ToString("0.0") °C</span></div>
+                    <div class="stat is-water"><span class="stat-label">Humidity</span><span class="stat-value" data-w="humidityPct" data-u="%">@w.HumidityPct.ToString("0")%</span></div>
+                    <div class="stat is-leaf"><span class="stat-label">Wind</span><span class="stat-value" data-w="windSpeedKmh" data-u=" km/h">@w.WindSpeedKmh.ToString("0") km/h</span></div>
+                    <div class="stat is-soil"><span class="stat-label">ET₀ (interval)</span><span class="stat-value" data-w="et0Mm" data-u=" mm">@w.Et0Mm.ToString("0.00") mm</span></div>
+                    <div class="stat is-grain"><span class="stat-label">UV index</span><span class="stat-value" data-w="uvIndex" data-u="">@w.UvIndex.ToString("0.0")</span></div>
+                    <div class="stat is-water"><span class="stat-label">Rain</span><span class="stat-value" data-w="rainfallMm" data-u=" mm">@w.RainfallMm.ToString("0.0") mm</span></div>
+                </div>
+                <div id="weather-alert" class="alert-line @(w.AlertLevel == "Warning" ? "is-warning" : "")" @(w.AlertLevel == "None" ? "hidden" : "")>@w.Notes</div>
+            }
+            else
+            {
+                <div class="empty">No weather logs yet.</div>
+            }
+        </div>
+    </div>
+</div>
+
+<script type="application/json" id="field-config">@Html.Raw(JsonSerializer.Serialize(config, FarmJson.Options))</script>
+<script type="application/json" id="field-snapshot">@Html.Raw(JsonSerializer.Serialize(snapshot, FarmJson.Options))</script>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="~/js/field-dashboard.js" asp-append-version="true"></script>
+}

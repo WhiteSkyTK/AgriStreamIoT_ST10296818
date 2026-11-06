@@ -1,0 +1,130 @@
+@model DeviceDetailsViewModel
+@using AgriStreamIoT.Shared.Constants
+@{
+    var d = Model.Device;
+    ViewData["Title"] = d.DeviceId;
+}
+
+<div class="crumbs"><a asp-action="Index">Device register</a> / @d.DeviceId</div>
+<div class="page-head">
+    <div>
+        <h1>@d.DeviceId <span class="muted fw-normal" style="font-stretch:100%">@d.DeviceName</span></h1>
+        <p class="lede"><i class="bi @Display.DeviceIcon(d.DeviceType) me-1" aria-hidden="true"></i>@DeviceTypes.Label(d.DeviceType)@(d.FieldName is null ? ", farm-wide" : " in " + d.FieldName)</p>
+    </div>
+    <div class="page-actions">
+        @if (d.FieldId is not null)
+        {
+            <a class="btn btn-ghost" asp-controller="Fields" asp-action="Dashboard" asp-route-id="@d.FieldId">Open field dashboard</a>
+        }
+        @if (Model.IsAdmin)
+        {
+            <a class="btn btn-ghost" asp-action="Edit" asp-route-id="@d.DeviceId"><i class="bi bi-pencil me-1" aria-hidden="true"></i>Edit details</a>
+        }
+    </div>
+</div>
+
+@if (ViewBag.StorageWarning is string warning)
+{
+    <div class="notice is-warn"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i><div>@warning</div></div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="panel">
+            <h2 class="panel-title">Register entry <partial name="_StatusPill" model="d.OperationalStatus" /></h2>
+            <dl class="row mb-0 small-text">
+                <dt class="col-5 muted fw-normal">Serial number</dt><dd class="col-7">@d.SerialNumber</dd>
+                <dt class="col-5 muted fw-normal">Firmware</dt><dd class="col-7">@d.FirmwareVersion</dd>
+                <dt class="col-5 muted fw-normal">Installed</dt><dd class="col-7">@d.InstalledOn.ToString("d MMM yyyy")</dd>
+                <dt class="col-5 muted fw-normal">Battery</dt><dd class="col-7">@(d.BatteryPct is null ? "Mains / n.a." : d.BatteryPct + "%")</dd>
+                <dt class="col-5 muted fw-normal">Last seen</dt><dd class="col-7">@Display.When(d.LastSeenUtc) (@Display.Ago(d.LastSeenUtc))</dd>
+                <dt class="col-5 muted fw-normal">Status changed</dt><dd class="col-7">@Display.When(d.StatusUpdatedAtUtc) by @(d.StatusUpdatedBy ?? "–")</dd>
+                @if (DeviceTypes.IsIrrigationController(d.DeviceType))
+                {
+                    <dt class="col-5 muted fw-normal">Last command</dt><dd class="col-7">@(d.LastCommandId is null ? "–" : $"{d.LastCommandAction} {d.LastCommandId}")</dd>
+                    <dt class="col-5 muted fw-normal">Irrigating until</dt><dd class="col-7">@(d.IrrigationEndsAtUtc is null ? "–" : Display.When(d.IrrigationEndsAtUtc))</dd>
+                }
+                @if (!string.IsNullOrEmpty(d.Notes))
+                {
+                    <dt class="col-5 muted fw-normal">Notes</dt><dd class="col-7">@d.Notes</dd>
+                }
+            </dl>
+        </div>
+
+        @if (Model.IsAdmin)
+        {
+            <div class="panel">
+                <h2 class="panel-title">Change operational status</h2>
+                <form asp-action="SetStatus" asp-route-id="@d.DeviceId" method="post" class="d-grid gap-2">
+                    <select name="status" class="form-select" aria-label="New status">
+                        @foreach (var s in DeviceStatuses.All)
+                        {
+                            <option value="@s" selected="@(s == d.OperationalStatus)">@s</option>
+                        }
+                    </select>
+                    <input name="reason" class="form-control" placeholder="Reason (e.g. Valve replaced, back in service)" maxlength="300" aria-label="Reason" />
+                    <button type="submit" class="btn btn-farm">Save status</button>
+                </form>
+                <form asp-action="Delete" asp-route-id="@d.DeviceId" method="post" class="mt-3"
+                      data-confirm="Remove @d.DeviceId from the master device register? Its status history is deleted too." data-confirm-label="Remove device">
+                    <button type="submit" class="btn btn-danger-soft btn-sm"><i class="bi bi-trash me-1" aria-hidden="true"></i>Remove from register</button>
+                </form>
+            </div>
+        }
+    </div>
+
+    <div class="col-lg-7">
+        <div class="panel">
+            <h2 class="panel-title"><span><i class="bi bi-clock-history me-2" aria-hidden="true"></i>Status history (dbo.DeviceStatusHistory)</span></h2>
+            @if (Model.History.Count == 0)
+            {
+                <div class="empty">No status changes recorded.</div>
+            }
+            else
+            {
+                <ul class="event-list">
+                    @foreach (var h in Model.History)
+                    {
+                        <li>
+                            <time>@Display.When(h.ChangedAtUtc)</time>
+                            <div>
+                                <div class="what">@(h.OldStatus ?? "New") → @h.NewStatus</div>
+                                <div class="why">@h.Reason</div>
+                                <div class="why">@h.ChangedBy@(h.CommandId is null ? "" : ", " + h.CommandId)</div>
+                            </div>
+                            <partial name="_StatusPill" model="h.NewStatus" />
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        @if (DeviceTypes.IsIrrigationController(d.DeviceType))
+        {
+            <div class="panel">
+                <h2 class="panel-title"><span><i class="bi bi-droplet-half me-2" aria-hidden="true"></i>Irrigation events (Table Storage)</span></h2>
+                @if (Model.Irrigation.Count == 0)
+                {
+                    <div class="empty">No irrigation events for this controller yet.</div>
+                }
+                else
+                {
+                    <ul class="event-list">
+                        @foreach (var e in Model.Irrigation)
+                        {
+                            <li>
+                                <time>@Display.When(e.ProcessedAtUtc)</time>
+                                <div>
+                                    <div class="what">@e.Action @(e.DurationMinutes > 0 ? $"{e.DurationMinutes} min" : "")</div>
+                                    <div class="why">@(e.OutcomeDetail ?? e.Reason)</div>
+                                    <div class="why">@e.Trigger by @e.RequestedBy@(e.EstimatedWaterLitres > 0 ? ", about " + Display.Litres(e.EstimatedWaterLitres) : "")</div>
+                                </div>
+                                <span class="pill is-@e.Outcome.ToLowerInvariant()">@e.Outcome</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+</div>

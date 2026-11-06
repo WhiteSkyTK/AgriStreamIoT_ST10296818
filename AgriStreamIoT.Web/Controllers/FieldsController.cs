@@ -145,6 +145,30 @@ public sealed class FieldsController : Controller
         }, FarmJson.Options);
     }
 
+    /// <summary>
+    /// Has the queue trigger processed this command yet? Reads the IrrigationEvents table directly
+    /// (no cache) plus the controller row in Azure SQL. Polled by the irrigation tracker.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> CommandStatus(string fieldId, string commandId, string deviceId,
+        [FromServices] ITelemetryQueryService telemetry, CancellationToken cancellationToken)
+    {
+        var events = await telemetry.GetIrrigationEventsAsync(new[] { fieldId }, 15, cancellationToken);
+        var match = events.FirstOrDefault(e => string.Equals(e.CommandId, commandId, StringComparison.OrdinalIgnoreCase));
+        var device = await _devices.GetAsync(deviceId, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return Json(new
+        {
+            processed = match is not null,
+            outcome = match?.Outcome,
+            detail = match?.OutcomeDetail,
+            latencySeconds = match?.LatencySeconds,
+            processedBy = match?.ProcessedBy,
+            processedAt = match is null ? null : Display.Time(match.ProcessedAtUtc, "HH:mm:ss"),
+            device = device is null ? null : DeviceStatusJson(device)
+        }, FarmJson.Options);
+    }
+
     [HttpGet, Authorize(Roles = UserRoles.CanManageFields)]
     public async Task<IActionResult> Edit(string id, CancellationToken cancellationToken)
     {

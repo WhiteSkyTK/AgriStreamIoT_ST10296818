@@ -1,0 +1,90 @@
+@model LandingViewModel
+@{
+    ViewData["Title"] = "Smart farm monitoring";
+}
+
+@section Hero {
+    <section class="landing-hero">
+        <div class="inner">
+            <h1>Every field, every probe, every drone flight in one place.</h1>
+            <p>AgriStream IoT takes in soil sensor readings all day, processes bursts of drone imagery as they land,
+               and opens the right irrigation valve when the soil gets dry, without losing a reading at peak hours.</p>
+            <div class="cta">
+                <a class="btn btn-grain" asp-controller="Account" asp-action="Login">Sign in to the farm</a>
+                <a class="btn btn-ghost-light" asp-controller="Account" asp-action="Register">Create an account</a>
+            </div>
+
+            <div class="board" aria-label="Live soil moisture per field">
+                <div class="board-head">
+                    <span><span class="live-dot me-1" aria-hidden="true"></span>Soil moisture right now</span>
+                    @if (Model.HasLiveData)
+                    {
+                        <span>Updated @Display.Time(Model.GeneratedAtUtc, "HH:mm:ss") SAST. The dashed line is each field's irrigation threshold.</span>
+                    }
+                    else
+                    {
+                        <span>Live readings appear here once the farm's Azure resources are connected.</span>
+                    }
+                </div>
+                @if (Model.Fields.Count > 0)
+                {
+                    <div class="board-rows">
+                        @foreach (var card in Model.Fields)
+                        {
+                            var moisture = card.Telemetry?.AvgSoilMoisturePct;
+                            var state = Display.MoistureState(moisture, card.Field.MoistureThresholdPct);
+                            <div class="board-row">
+                                <div class="name">@card.Field.Name<small>@card.Field.Crop</small></div>
+                                <div class="bar-track" role="img" aria-label="@card.Field.Name @(moisture?.ToString("0.0") ?? "no data")% against a @card.Field.MoistureThresholdPct.ToString("0.#")% threshold">
+                                    <div class="bar-fill @(state.Css == "is-dry" ? "is-dry" : "")" style="width:@Display.GaugePercent(moisture)%"></div>
+                                    <div class="bar-mark" style="left:@Display.GaugePercent((double)card.Field.MoistureThresholdPct)%"></div>
+                                </div>
+                                <div class="value">@(moisture?.ToString("0.0") ?? "–")%</div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="board-rows">
+                        @foreach (var name in new[] { "North Pivot 1", "East Orchard", "Tunnel Houses" })
+                        {
+                            <div class="board-row">
+                                <div class="name">@name<small>waiting for data</small></div>
+                                <div class="bar-track"><div class="bar-fill" style="width:0"></div></div>
+                                <div class="value">–</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+}
+
+<div class="section-head">
+    <h2>How the pipeline handles a busy day</h2>
+    <a asp-controller="Home" asp-action="Setup" class="small-text">Setup checklist</a>
+</div>
+<div class="how-grid">
+    <div class="how-step">
+        <i class="bi bi-moisture" aria-hidden="true"></i>
+        <h3>Soil probes report</h3>
+        <p>Readings from every probe land in Azure Table Storage in batch writes, keyed so the newest reading for a field comes back first.</p>
+    </div>
+    <div class="how-step">
+        <i class="bi bi-airplane" aria-hidden="true"></i>
+        <h3>Drone flights upload</h3>
+        <p>High-resolution images go to Blob Storage. A blob-triggered function checks each one and records its processing status.</p>
+    </div>
+    <div class="how-step">
+        <i class="bi bi-droplet-half" aria-hidden="true"></i>
+        <h3>Irrigation is queued</h3>
+        <p>A farmer's click or a dry-soil alert puts an irrigation command on a Storage Queue, so a burst of requests is never lost.</p>
+    </div>
+    <div class="how-step">
+        <i class="bi bi-hdd-network" aria-hidden="true"></i>
+        <h3>The register updates</h3>
+        <p>A queue-triggered function applies each command and sets the controller's status in the Azure SQL device register.</p>
+    </div>
+</div>

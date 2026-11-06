@@ -1,0 +1,11 @@
+@{
+    ViewData["Title"] = "Not available for your role";
+}
+<div class="panel" style="max-width:640px">
+    <h1 class="h3"><i class="bi bi-lock me-2" style="color:var(--soil)" aria-hidden="true"></i>This page isn't available for your role</h1>
+    <p>
+        You're signed in as a <strong>@User.Role()</strong>. Irrigation control is for farmers and admins, field thresholds are for agronomists and admins,
+        and the device register, users and pipeline tools are for admins. Ask a farm administrator if you need access.
+    </p>
+    <a class="btn btn-farm" asp-controller="Dashboard" asp-action="Index">Back to the farm overview</a>
+</div>

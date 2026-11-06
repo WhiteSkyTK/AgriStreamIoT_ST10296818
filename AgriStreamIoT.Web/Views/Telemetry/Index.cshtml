@@ -1,0 +1,131 @@
+@model TelemetryExplorerViewModel
+@{
+    ViewData["Title"] = "Telemetry explorer";
+    var tabs = new[] { ("readings", "Sensor readings", "SensorTelemetry"), ("environment", "Environmental logs", "EnvironmentalLogs"), ("irrigation", "Irrigation events", "IrrigationEvents"), ("images", "Image audits", "ImageProcessingAudit") };
+    var current = tabs.First(t => t.Item1 == Model.Tab);
+}
+
+<div class="page-head">
+    <div>
+        <h1>Telemetry explorer</h1>
+        <p class="lede">The raw high-frequency data in Azure Table Storage, newest first. Showing table <strong>@current.Item3</strong>.</p>
+    </div>
+</div>
+
+<div class="filters">
+    <div class="seg" role="tablist" aria-label="Table">
+        @foreach (var (key, label, _) in tabs)
+        {
+            <a class="@(key == Model.Tab ? "active" : "")" role="tab" aria-selected="@(key == Model.Tab ? "true" : "false")"
+               asp-action="Index" asp-route-tab="@key" asp-route-field="@Model.Field">@label</a>
+        }
+    </div>
+    @if (Model.Tab is "readings" or "irrigation")
+    {
+        <form method="get" class="d-flex gap-2 flex-wrap">
+            <input type="hidden" name="tab" value="@Model.Tab" />
+            <select name="field" class="form-select" style="width:auto" data-autosubmit aria-label="Field">
+                <option value="">All fields</option>
+                @foreach (var f in Model.Fields)
+                {
+                    <option value="@f.FieldId" selected="@(Model.Field == f.FieldId)">@f.FieldId: @f.Name</option>
+                }
+            </select>
+            @if (Model.Tab == "readings")
+            {
+                <input name="device" class="form-control" style="width:160px" placeholder="Device, e.g. SM-F01-01" value="@Model.Device" aria-label="Device" />
+                <button type="submit" class="btn btn-ghost">Filter</button>
+            }
+        </form>
+    }
+    @if (Model.Tab == "environment")
+    {
+        <form method="get" class="d-flex gap-2">
+            <input type="hidden" name="tab" value="environment" />
+            <select name="hours" class="form-select" style="width:auto" data-autosubmit aria-label="Window">
+                @foreach (var h in new[] { 6, 24, 48, 168 })
+                {
+                    <option value="@h" selected="@(Model.Hours == h)">Last @(h == 168 ? "7 days" : h + " h")</option>
+                }
+            </select>
+        </form>
+    }
+</div>
+
+<div class="panel is-flush">
+    <div class="table-scroll">
+        @switch (Model.Tab)
+        {
+            case "environment":
+                <table class="table-farm">
+                    <thead><tr><th>Time</th><th>Station</th><th>Air °C</th><th>Humidity</th><th>Rain mm</th><th>Wind km/h</th><th>Solar W/m²</th><th>ET₀ mm</th><th>UV</th><th>Pressure hPa</th><th>Alert</th></tr></thead>
+                    <tbody>
+                        @if (Model.Environment.Count == 0) { <tr><td colspan="11" class="empty">No environmental logs in this window.</td></tr> }
+                        @foreach (var e in Model.Environment)
+                        {
+                            <tr>
+                                <td class="nowrap">@Display.When(e.ReadingUtc)</td><td>@e.StationId</td><td>@e.AirTemperatureC.ToString("0.0")</td>
+                                <td>@e.HumidityPct.ToString("0")%</td><td>@e.RainfallMm.ToString("0.0")</td><td>@e.WindSpeedKmh.ToString("0")</td>
+                                <td>@e.SolarRadiationWm2.ToString("0")</td><td>@e.Et0Mm.ToString("0.00")</td><td>@e.UvIndex.ToString("0.0")</td>
+                                <td>@e.PressureHpa.ToString("0.0")</td><td class="small-text">@(e.AlertLevel == "None" ? "–" : e.AlertLevel + ": " + e.Notes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                break;
+            case "irrigation":
+                <table class="table-farm">
+                    <thead><tr><th>Processed</th><th>Command</th><th>Field</th><th>Device</th><th>Action</th><th>Trigger</th><th>Requested by</th><th>Outcome</th><th>Detail</th><th>Latency</th></tr></thead>
+                    <tbody>
+                        @if (Model.Irrigation.Count == 0) { <tr><td colspan="10" class="empty">No irrigation events yet.</td></tr> }
+                        @foreach (var e in Model.Irrigation)
+                        {
+                            <tr>
+                                <td class="nowrap">@Display.When(e.ProcessedAtUtc)</td><td class="small-text">@e.CommandId</td><td>@e.FieldId</td><td>@e.DeviceId</td>
+                                <td>@e.Action@(e.DurationMinutes > 0 ? $" {e.DurationMinutes} min" : "")</td><td>@e.Trigger</td><td class="small-text">@e.RequestedBy</td>
+                                <td><span class="pill is-@e.Outcome.ToLowerInvariant()">@e.Outcome</span></td><td class="small-text">@e.OutcomeDetail</td>
+                                <td class="nowrap">@(e.Trigger == "AutoStop" ? "scheduled" : e.LatencySeconds.ToString("0.0") + " s")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                break;
+            case "images":
+                <table class="table-farm">
+                    <thead><tr><th>Uploaded</th><th>File</th><th>Field</th><th>By</th><th>Size</th><th>Format</th><th>Resolution</th><th>Status</th><th>Processing</th><th>Instance</th></tr></thead>
+                    <tbody>
+                        @if (Model.Audits.Count == 0) { <tr><td colspan="10" class="empty">No drone images have been audited yet.</td></tr> }
+                        @foreach (var a in Model.Audits)
+                        {
+                            <tr>
+                                <td class="nowrap">@Display.When(a.UploadedAtUtc)</td><td class="small-text text-break">@(a.OriginalFileName ?? a.BlobName)</td><td>@a.FieldId</td>
+                                <td class="small-text">@a.UploadedBy</td><td>@Display.Bytes(a.SizeBytes)</td><td>@a.Format</td>
+                                <td class="nowrap">@(a.WidthPx > 0 ? $"{a.WidthPx}×{a.HeightPx} ({a.Megapixels:0.0} MP)" : "–")</td>
+                                <td><span class="pill is-@a.Status.ToLowerInvariant()">@a.Status</span></td>
+                                <td class="nowrap">@a.ProcessingMs.ToString("0") ms, @a.PipelineLatencySeconds.ToString("0.0") s after upload</td><td class="small-text">@a.ProcessedOn</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                break;
+            default:
+                <table class="table-farm">
+                    <thead><tr><th>Time</th><th>Device</th><th>Field</th><th>Moisture</th><th>Soil °C</th><th>Air °C</th><th>Humidity</th><th>pH</th><th>EC dS/m</th><th>N ppm</th><th>Battery</th><th>Signal</th><th>Source</th></tr></thead>
+                    <tbody>
+                        @if (Model.Readings.Count == 0) { <tr><td colspan="13" class="empty">No readings found.</td></tr> }
+                        @foreach (var r in Model.Readings)
+                        {
+                            <tr>
+                                <td class="nowrap">@Display.Time(r.ReadingUtc, "d MMM HH:mm:ss")</td><td class="id">@r.DeviceId</td><td>@r.FieldId</td>
+                                <td>@r.SoilMoisturePct.ToString("0.0")%</td><td>@r.SoilTemperatureC.ToString("0.0")</td><td>@r.AirTemperatureC.ToString("0.0")</td>
+                                <td>@r.HumidityPct.ToString("0")%</td><td>@r.SoilPh.ToString("0.00")</td><td>@r.SoilEcDsM.ToString("0.00")</td>
+                                <td>@r.NitrogenPpm.ToString("0")</td><td>@r.BatteryPct%</td><td>@r.SignalDbm dBm</td><td class="small-text muted">@r.Source</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                break;
+        }
+    </div>
+</div>
+<p class="small-text muted mt-2">Showing up to 200 rows. Each field's readings share a partition (PartitionKey = field), and the RowKey sorts newest first, so these queries read only the first page of each partition.</p>

@@ -1,0 +1,99 @@
+@model DeviceEditViewModel
+@using AgriStreamIoT.Shared.Constants
+@{
+    ViewData["Title"] = Model.IsNew ? "Register a device" : "Edit " + Model.DeviceId;
+}
+
+<div class="crumbs"><a asp-action="Index">Device register</a> / @(Model.IsNew ? "New device" : Model.DeviceId)</div>
+<div class="page-head">
+    <div>
+        <h1>@(Model.IsNew ? "Register a device" : "Edit " + Model.DeviceId)</h1>
+        <p class="lede">@(Model.IsNew ? "Adds the device to the master device register in Azure SQL." : "Status changes are made from the device page so they are recorded in the history.")</p>
+    </div>
+</div>
+
+<div class="panel" style="max-width:860px">
+    <form asp-action="@(Model.IsNew ? "Create" : "Edit")" method="post" novalidate>
+        <div asp-validation-summary="All" class="validation-summary-errors mb-2"></div>
+        <div class="row g-3">
+            <div class="col-sm-4">
+                <label asp-for="DeviceId" class="form-label"></label>
+                @if (Model.IsNew)
+                {
+                    <input asp-for="DeviceId" class="form-control" placeholder="SM-F01-04" />
+                }
+                else
+                {
+                    <input asp-for="DeviceId" class="form-control" readonly />
+                }
+                <span asp-validation-for="DeviceId" class="field-validation-error"></span>
+            </div>
+            <div class="col-sm-8">
+                <label asp-for="DeviceName" class="form-label"></label>
+                <input asp-for="DeviceName" class="form-control" placeholder="Soil probe D (North Pivot 1)" />
+                <span asp-validation-for="DeviceName" class="field-validation-error"></span>
+            </div>
+            <div class="col-sm-6">
+                <label asp-for="DeviceType" class="form-label"></label>
+                <select asp-for="DeviceType" class="form-select">
+                    @foreach (var t in DeviceTypes.All)
+                    {
+                        <option value="@t">@DeviceTypes.Label(t)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-6">
+                <label asp-for="FieldId" class="form-label"></label>
+                <select asp-for="FieldId" class="form-select">
+                    <option value="">Farm-wide (no field)</option>
+                    @foreach (var f in Model.Fields)
+                    {
+                        <option value="@f.FieldId">@f.FieldId: @f.Name</option>
+                    }
+                </select>
+                <span asp-validation-for="FieldId" class="field-validation-error"></span>
+            </div>
+            <div class="col-sm-6">
+                <label asp-for="SerialNumber" class="form-label"></label>
+                <input asp-for="SerialNumber" class="form-control" />
+                <span asp-validation-for="SerialNumber" class="field-validation-error"></span>
+            </div>
+            <div class="col-sm-3">
+                <label asp-for="FirmwareVersion" class="form-label"></label>
+                <input asp-for="FirmwareVersion" class="form-control" />
+            </div>
+            <div class="col-sm-3">
+                <label asp-for="BatteryPct" class="form-label"></label>
+                <input asp-for="BatteryPct" class="form-control" type="number" min="0" max="100" />
+            </div>
+            <div class="col-sm-6">
+                <label asp-for="InstalledOn" class="form-label"></label>
+                <input asp-for="InstalledOn" class="form-control" type="date" />
+            </div>
+            @if (Model.IsNew)
+            {
+                <div class="col-sm-6">
+                    <label asp-for="OperationalStatus" class="form-label"></label>
+                    <select asp-for="OperationalStatus" class="form-select">
+                        @foreach (var s in DeviceStatuses.All)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="col-12">
+                <label asp-for="Notes" class="form-label"></label>
+                <textarea asp-for="Notes" class="form-control" rows="2"></textarea>
+            </div>
+        </div>
+        <div class="d-flex gap-2 mt-3">
+            <button type="submit" class="btn btn-farm">@(Model.IsNew ? "Register device" : "Save changes")</button>
+            <a class="btn btn-ghost" asp-action="@(Model.IsNew ? "Index" : "Details")" asp-route-id="@(Model.IsNew ? null : Model.DeviceId)">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

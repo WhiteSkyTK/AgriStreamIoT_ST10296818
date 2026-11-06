@@ -1,0 +1,93 @@
+@model SetupViewModel
+@{
+    ViewData["Title"] = "Setup checklist";
+    string Done(bool ok) => ok ? "is-done" : string.Empty;
+}
+
+<div class="page-head">
+    <div>
+        <h1>Setup checklist</h1>
+        <p class="lede">What AgriStream needs before it can show the farm. Values are read again on every request, so you don't need to restart after saving.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Missing))
+{
+    <div class="notice is-warn">
+        <i class="bi bi-plug" aria-hidden="true"></i>
+        <div>The page you opened needs <strong>@Model.Missing</strong>. Fill it in below, then try again.</div>
+    </div>
+}
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="panel">
+            <h2 class="panel-title">Connect the Azure services</h2>
+            <ol class="setup-steps">
+                <li class="@Done(Model.SqlConfigured)">
+                    <div>
+                        <strong>Azure SQL Database</strong> (logins, fields, master device register)
+                        <p class="small-text muted mb-1">Portal: SQL database &gt; Settings &gt; Connection strings &gt; ADO.NET. Replace <em>{your_password}</em> with your password.</p>
+                        <pre class="code">"ConnectionStrings": { "FarmSql": "Server=tcp:...database.windows.net,1433;Initial Catalog=...;User ID=...;Password=...;Encrypt=True;" }</pre>
+                    </div>
+                </li>
+                <li class="@Done(Model.StorageConfigured)">
+                    <div>
+                        <strong>Azure Storage account</strong> (drone images, telemetry tables, irrigation queue)
+                        <p class="small-text muted mb-1">Portal: Storage account &gt; Security + networking &gt; Access keys &gt; Connection string.</p>
+                        <pre class="code">"ConnectionStrings": { "FarmStorage": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net" }</pre>
+                    </div>
+                </li>
+                <li class="@Done(!string.IsNullOrEmpty(Model.FunctionsBaseUrl))">
+                    <div>
+                        <strong>Function App</strong> (the four pipeline functions)
+                        <p class="small-text muted mb-1">
+                            Currently: <strong>@(Model.FunctionsBaseUrl ?? "not set")</strong>@(Model.FunctionsKeySet ? ", key set" : ", no key").
+                            Locally use http://localhost:7071/api/ with no key. In Azure use https://your-function-app.azurewebsites.net/api/ and the default host key from Function App &gt; App keys.
+                        </p>
+                    </div>
+                </li>
+            </ol>
+            <p class="small-text muted mt-3 mb-0">
+                Local: put these in <strong>AgriStreamIoT.Web/appsettings.Local.json</strong> (git ignores it). Azure: App Service &gt; Settings &gt; Environment variables, using the names
+                <strong>ConnectionStrings__FarmSql</strong>, <strong>ConnectionStrings__FarmStorage</strong>, <strong>AzureFunctions__BaseUrl</strong> and <strong>AzureFunctions__Key</strong>.
+            </p>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="panel">
+            <h2 class="panel-title">Start-up progress <span class="small-text muted">@Model.Environment</span></h2>
+            <ul class="health-list">
+                @foreach (var step in new[] { Model.Readiness.Sql, Model.Readiness.Storage })
+                {
+                    <li>
+                        <i class="bi @(step.Ready ? "bi-check-circle-fill ok" : "bi-hourglass-split bad")" aria-hidden="true"></i>
+                        <div>
+                            <div class="name">@step.Name</div>
+                            <div class="detail">
+                                @if (step.Ready)
+                                {
+                                    @:Ready since @Display.Time(step.ReadyAtUtc, "HH:mm:ss"). @step.Description.
+                                }
+                                else if (step.NotConfigured)
+                                {
+                                    @:Waiting for the connection string.
+                                }
+                                else if (step.LastError is not null)
+                                {
+                                    @:Retrying (attempt @step.Attempts): @step.LastError
+                                }
+                                else
+                                {
+                                    @:Starting…
+                                }
+                            </div>
+                        </div>
+                        <span class="ms">@(step.Ready ? "ready" : "pending")</span>
+                    </li>
+                }
+            </ul>
+            <a class="btn btn-farm mt-2" href="javascript:location.reload()">Check again</a>
+        </div>
+    </div>
+</div>

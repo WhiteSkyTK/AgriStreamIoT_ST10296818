@@ -361,3 +361,12 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# ── AgriStream IoT: secrets stay on this PC, never in GitHub ──
+appsettings.Local.json
+**/appsettings.Local.json
+local.settings.json
+**/local.settings.json
+*.publishsettings
+*.pubxml.user
+loadtest-results*.csv

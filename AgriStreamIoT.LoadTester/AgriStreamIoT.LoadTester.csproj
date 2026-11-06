@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Load generator for the autoscale demo. No packages needed. Usage is in docs/RUNBOOK.md (step 6). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AgriStreamIoT.LoadTester</RootNamespace>
+  </PropertyGroup>
+
+</Project>

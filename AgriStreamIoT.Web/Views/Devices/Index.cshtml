@@ -1,0 +1,107 @@
+@model DeviceListViewModel
+@using AgriStreamIoT.Shared.Constants
+@{
+    ViewData["Title"] = "Master device register";
+}
+
+<div class="page-head">
+    <div>
+        <h1>Master device register</h1>
+        <p class="lede">Every probe, controller, gateway and drone on the farm, with its operational status. Stored in Azure SQL (dbo.Devices); irrigation commands update controllers here.</p>
+    </div>
+    @if (Model.IsAdmin)
+    {
+        <div class="page-actions">
+            <a class="btn btn-farm" asp-action="Create" asp-route-field="@Model.Field"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Register a device</a>
+        </div>
+    }
+</div>
+
+<div class="strip mb-3" role="group" aria-label="Devices by status">
+    <div class="strip-cell"><span class="strip-value">@Model.Total</span><span class="strip-label">Registered devices</span></div>
+    @foreach (var status in DeviceStatuses.All)
+    {
+        <div class="strip-cell">
+            <span class="strip-value">@Model.Counts.GetValueOrDefault(status)</span>
+            <span class="strip-label"><a class="text-reset" asp-action="Index" asp-route-status="@status">@status</a></span>
+        </div>
+    }
+</div>
+
+<form method="get" class="filters" aria-label="Filter devices">
+    <select name="field" class="form-select" style="width:auto" data-autosubmit aria-label="Field">
+        <option value="">All fields</option>
+        @foreach (var f in Model.Fields)
+        {
+            <option value="@f.FieldId" selected="@(Model.Field == f.FieldId)">@f.FieldId: @f.Name</option>
+        }
+        <option value="FARM" selected="@(Model.Field == "FARM")">Farm-wide devices</option>
+    </select>
+    <select name="type" class="form-select" style="width:auto" data-autosubmit aria-label="Type">
+        <option value="">All types</option>
+        @foreach (var t in DeviceTypes.All)
+        {
+            <option value="@t" selected="@(Model.Type == t)">@DeviceTypes.Label(t)</option>
+        }
+    </select>
+    <select name="status" class="form-select" style="width:auto" data-autosubmit aria-label="Status">
+        <option value="">Any status</option>
+        @foreach (var s in DeviceStatuses.All)
+        {
+            <option value="@s" selected="@(Model.Status == s)">@s</option>
+        }
+    </select>
+    @if (!string.IsNullOrEmpty(Model.Field) || !string.IsNullOrEmpty(Model.Type) || !string.IsNullOrEmpty(Model.Status))
+    {
+        <a class="btn btn-ghost btn-sm" asp-action="Index">Clear filters</a>
+    }
+    <noscript><button class="btn btn-ghost btn-sm" type="submit">Apply</button></noscript>
+</form>
+
+<div class="panel is-flush">
+    <div class="table-scroll">
+        <table class="table-farm">
+            <thead>
+                <tr>
+                    <th scope="col">Device</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Field</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Battery</th>
+                    <th scope="col">Last seen</th>
+                    <th scope="col">Last command</th>
+                    <th scope="col">Serial / firmware</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.Devices.Count == 0)
+                {
+                    <tr><td colspan="8" class="empty">No devices match these filters.</td></tr>
+                }
+                @foreach (var d in Model.Devices)
+                {
+                    <tr>
+                        <td>
+                            <a class="id" asp-action="Details" asp-route-id="@d.DeviceId">@d.DeviceId</a>
+                            <div class="small-text muted">@d.DeviceName</div>
+                        </td>
+                        <td class="nowrap"><i class="bi @Display.DeviceIcon(d.DeviceType) me-1" style="color:var(--soil)" aria-hidden="true"></i>@DeviceTypes.Label(d.DeviceType)</td>
+                        <td>@(d.FieldName ?? "Farm-wide")</td>
+                        <td><partial name="_StatusPill" model="d.OperationalStatus" /></td>
+                        <td>@(d.BatteryPct is null ? "–" : d.BatteryPct + "%")</td>
+                        <td class="nowrap">@Display.Ago(d.LastSeenUtc)</td>
+                        <td class="small-text">
+                            @if (d.LastCommandId is not null)
+                            {
+                                <span>@d.LastCommandAction at @Display.When(d.LastCommandAtUtc)</span>
+                                <div class="muted">@d.LastCommandId</div>
+                            }
+                            else { <span class="muted">–</span> }
+                        </td>
+                        <td class="small-text muted">@d.SerialNumber<br />v@(d.FirmwareVersion)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

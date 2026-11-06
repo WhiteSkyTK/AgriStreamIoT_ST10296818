@@ -2,11 +2,10 @@
   "IsEncrypted": false,
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AzureWebJobsStorage": "",
-    "FarmStorage": "",
-    "FarmSql": "",
-    "TelemetryCacheSeconds": "10",
-    "APPLICATIONINSIGHTS_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=agristreamiot9;AccountKey=xxpQaUR1UkK6AGcZmS2HzDWDivlBta0HFeoRQ9c26yArYcXYQ4It8hF52Fv4NG+am5gm1imn9g/n+AStvWDWCg==;EndpointSuffix=core.windows.net"
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;AccountName=agristreamiot9;AccountKey=xxpQaUR1UkK6AGcZmS2HzDWDivlBta0HFeoRQ9c26yArYcXYQ4It8hF52Fv4NG+am5gm1imn9g/n+AStvWDWCg==;EndpointSuffix=core.windows.net",
+    "FarmStorage": "DefaultEndpointsProtocol=https;AccountName=agristreamiot9;AccountKey=xxpQaUR1UkK6AGcZmS2HzDWDivlBta0HFeoRQ9c26yArYcXYQ4It8hF52Fv4NG+am5gm1imn9g/n+AStvWDWCg==;EndpointSuffix=core.windows.net",
+    "FarmSql": "Server=tcp:agristeamiot.database.windows.net,1433;Initial Catalog=agristreamdb;Persist Security Info=False;User ID=agristreamadmin;Password=innocent10!;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;",
+    "TelemetryCacheSeconds": "10"
   },
   "Host": {
     "LocalHttpPort": 7071

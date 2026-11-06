@@ -1,0 +1,124 @@
+@model MediaGalleryViewModel
+@using AgriStreamIoT.Shared.Constants
+@{
+    ViewData["Title"] = "Drone & media";
+    var drone = Model.Items.Count(i => i.Category == MediaCategory.DroneImagery);
+    var pending = Model.Items.Count(i => i.Category == MediaCategory.DroneImagery && !Model.Audits.ContainsKey(i.BlobName));
+}
+
+<div class="page-head">
+    <div>
+        <h1>Drone imagery &amp; farm media</h1>
+        <p class="lede">Files live in Azure Blob Storage. Every drone image fires the <strong>ProcessDroneImageUpload</strong> blob trigger, which validates it and writes a processing-status audit entry to Table Storage.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-farm" asp-action="Upload" asp-route-field="@Model.Field"><i class="bi bi-cloud-arrow-up me-1" aria-hidden="true"></i>Upload files</a>
+    </div>
+</div>
+
+<div class="filters">
+    <div class="seg" role="group" aria-label="Category">
+        <a class="@(string.IsNullOrEmpty(Model.Category) ? "active" : "")" asp-action="Index" asp-route-field="@Model.Field">All</a>
+        <a class="@(Model.Category == "drone" ? "active" : "")" asp-action="Index" asp-route-category="drone" asp-route-field="@Model.Field">Drone imagery</a>
+        <a class="@(Model.Category == "media" ? "active" : "")" asp-action="Index" asp-route-category="media" asp-route-field="@Model.Field">Farm media</a>
+    </div>
+    <form method="get">
+        <input type="hidden" name="category" value="@Model.Category" />
+        <select name="field" class="form-select" style="width:auto" data-autosubmit aria-label="Field">
+            <option value="">All fields</option>
+            @foreach (var f in Model.Fields)
+            {
+                <option value="@f.FieldId" selected="@(Model.Field == f.FieldId)">@f.FieldId: @f.Name</option>
+            }
+        </select>
+    </form>
+    <span class="small-text muted ms-auto">@Model.Items.Count file(s), @drone drone image(s)@(pending > 0 ? $", {pending} waiting for the blob trigger" : "")</span>
+</div>
+
+@if (Model.Items.Count == 0)
+{
+    <div class="panel">
+        <div class="empty"><i class="bi bi-images" aria-hidden="true"></i>No files yet. Upload drone images from a flight, or create a burst from the Pipeline page.</div>
+    </div>
+}
+else
+{
+    <div class="gallery" id="gallery">
+        @foreach (var item in Model.Items)
+        {
+            Model.Audits.TryGetValue(item.BlobName, out var audit);
+            var status = item.Category == MediaCategory.DroneImagery ? audit?.Status ?? "Processing" : null;
+            <article class="shot" data-blob="@item.BlobName">
+                <div class="frame">
+                    @if (item.IsImage && item.ViewUrl is not null && item.ContentType != "image/tiff")
+                    {
+                        <a href="@item.ViewUrl" target="_blank" rel="noopener"><img src="@item.ViewUrl" alt="@item.FileName" loading="lazy" /></a>
+                    }
+                    else
+                    {
+                        <i class="bi @(item.IsImage ? "bi-file-earmark-image" : item.ContentType?.StartsWith("video") == true ? "bi-film" : "bi-file-earmark-text")" aria-hidden="true"></i>
+                    }
+                </div>
+                <div class="body">
+                    <div class="title">@item.FileName</div>
+                    <div class="meta">
+                        <span>@(item.FieldId ?? "Farm")</span>
+                        <span>@Display.Bytes(item.SizeBytes)</span>
+                        <span>@Display.When(item.UploadedAtUtc)</span>
+                    </div>
+                    @if (status is not null)
+                    {
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="pill is-@status.ToLowerInvariant()" data-role="status">@status</span>
+                            <span class="audit" data-role="detail">@(audit?.StatusDetail ?? "Waiting for the ProcessDroneImageUpload function…")</span>
+                        </div>
+                        <div class="audit" data-role="timing">@(audit is null ? "" : $"Audited {Display.Time(audit.ProcessedAtUtc, "HH:mm:ss")}, {audit.PipelineLatencySeconds:0.#} s after upload on {audit.ProcessedOn}")</div>
+                    }
+                    else
+                    {
+                        <div class="audit">Farm media (no processing pipeline)</div>
+                    }
+                    @if (Model.IsAdmin)
+                    {
+                        <form asp-action="Delete" method="post" data-confirm="Delete @item.FileName from Blob Storage?" data-confirm-label="Delete file">
+                            <input type="hidden" name="container" value="@item.Container" />
+                            <input type="hidden" name="name" value="@item.BlobName" />
+                            <button type="submit" class="btn btn-ghost btn-sm mt-1"><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete</button>
+                        </form>
+                    }
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@section Scripts {
+    <script>
+        // Live audit status: poll the ImageProcessingAudit table while any image is still waiting.
+        (function () {
+            const url = '@Url.Action("Audits", "Media")';
+            const statusClass = s => 'pill is-' + String(s).toLowerCase();
+            async function poll() {
+                const waiting = document.querySelectorAll('[data-role="status"]');
+                if (![...waiting].some(el => el.textContent === 'Processing')) return;
+                try {
+                    const audits = await (await fetch(url, { headers: { Accept: 'application/json' } })).json();
+                    const byBlob = {};
+                    audits.forEach(a => { byBlob[a.blobName] = a; });
+                    document.querySelectorAll('#gallery [data-blob]').forEach(card => {
+                        const a = byBlob[card.dataset.blob];
+                        const pill = card.querySelector('[data-role="status"]');
+                        if (!a || !pill) return;
+                        pill.className = statusClass(a.status);
+                        pill.textContent = a.status;
+                        card.querySelector('[data-role="detail"]').textContent = a.statusDetail || '';
+                        card.querySelector('[data-role="timing"]').textContent =
+                            'Audited ' + a.processedAt + ', ' + Number(a.pipelineLatencySeconds).toFixed(1) + ' s after upload on ' + (a.processedOn || 'function host');
+                    });
+                } catch (e) { /* try again next tick */ }
+                setTimeout(poll, 3000);
+            }
+            setTimeout(poll, 2000);
+        })();
+    </script>
+}

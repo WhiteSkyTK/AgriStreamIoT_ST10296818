@@ -1,0 +1,52 @@
+@model FieldEditViewModel
+@{
+    ViewData["Title"] = "Agronomy settings: " + Model.Name;
+}
+
+<div class="crumbs"><a asp-controller="Dashboard" asp-action="Index">Farm overview</a> / <a asp-action="Dashboard" asp-route-id="@Model.FieldId">@Model.Name</a> / Agronomy settings</div>
+<div class="page-head">
+    <div>
+        <h1>@Model.Name: agronomy settings</h1>
+        <p class="lede">The moisture threshold decides when the sensor automation asks for irrigation. Saved in Azure SQL (dbo.Fields).</p>
+    </div>
+</div>
+
+<div class="panel" style="max-width:720px">
+    <form asp-action="Edit" method="post" novalidate>
+        <input type="hidden" asp-for="FieldId" />
+        <div asp-validation-summary="ModelOnly" class="validation-summary-errors mb-2"></div>
+
+        <div class="mb-3">
+            <label asp-for="Crop" class="form-label">Crop</label>
+            <input asp-for="Crop" class="form-control" />
+            <span asp-validation-for="Crop" class="field-validation-error"></span>
+        </div>
+        <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+                <label asp-for="MoistureThresholdPct" class="form-label"></label>
+                <input asp-for="MoistureThresholdPct" class="form-control" type="number" step="0.5" min="5" max="45" />
+                <div class="form-text">Below this average volumetric water content, the field is irrigated.</div>
+                <span asp-validation-for="MoistureThresholdPct" class="field-validation-error"></span>
+            </div>
+            <div class="col-sm-6">
+                <label asp-for="FlowRateLitresPerMin" class="form-label"></label>
+                <input asp-for="FlowRateLitresPerMin" class="form-control" type="number" step="10" min="10" max="20000" />
+                <div class="form-text">Used to estimate water per irrigation cycle.</div>
+                <span asp-validation-for="FlowRateLitresPerMin" class="field-validation-error"></span>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label asp-for="Notes" class="form-label"></label>
+            <textarea asp-for="Notes" class="form-control" rows="3" placeholder="e.g. Tasselling stage: keep moisture above 30% this week"></textarea>
+            <span asp-validation-for="Notes" class="field-validation-error"></span>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-farm">Save settings</button>
+            <a class="btn btn-ghost" asp-action="Dashboard" asp-route-id="@Model.FieldId">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

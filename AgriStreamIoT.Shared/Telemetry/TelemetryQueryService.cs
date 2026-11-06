@@ -188,7 +188,8 @@ public sealed class TelemetryQueryService : ITelemetryQueryService
             .Select(g => new TelemetryPoint
             {
                 DeviceId = g.Key.DeviceId,
-                TimeUtc = new DateTimeOffset((long)g.Average(x => (double)x.ReadingUtc.UtcTicks), TimeSpan.Zero),
+                // Bucket start: every sensor shares the same x values, so the chart can compare them at one time.
+                TimeUtc = new DateTimeOffset(g.Key.Bucket * bucketTicks, TimeSpan.Zero),
                 SoilMoisturePct = Math.Round(g.Average(x => x.SoilMoisturePct), 2),
                 SoilTemperatureC = Math.Round(g.Average(x => x.SoilTemperatureC), 2)
             })
